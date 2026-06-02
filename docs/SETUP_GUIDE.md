@@ -2,11 +2,15 @@
 
 ## 1. Raspberry Pi 4 Model B — Initial Configuration
 
+> **All commands in this section must be run on the Pi, not your Mac.**
+> SSH into the Pi first: `ssh pi@<pi-ip>` (or `ssh pi@192.168.7.2` via USB-C, `ssh pi@raspberrypi.local` via WiFi/Ethernet).
+> `raspi-config`, `apt`, `libcamera-*`, and `vcgencmd` are Raspberry Pi OS tools — they do not exist on macOS.
+
 ### Enable Camera (CSI)
 ```bash
+# Run on the Pi (after SSH):
 sudo raspi-config
-# Interface Options → Camera → Enable → Reboot
-sudo reboot
+# Interface Options → Camera → Enable → Finish → Reboot
 ```
 
 ### Install system dependencies
