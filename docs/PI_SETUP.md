@@ -6,19 +6,21 @@
 
 ## Critical: Know Which Machine You Are Typing On
 
-Every command in this guide is labelled with one of two tags:
+Every command is labelled:
 
-- **[MAC]** — run this in a Terminal window on your Mac
-- **[PI]** — run this inside an SSH session connected to the Pi, or directly on the Pi with a keyboard attached
+- **[PI]** — run inside an SSH session on the Pi, or directly on the Pi with a keyboard
+- **[MAC]** — run in a Terminal on your Mac
+- **[WIN]** — run on a Windows PC
+- **[LINUX]** — run on a Linux desktop/laptop
 
-**Never run a [PI] command on your Mac.** Tools like `raspi-config`, `libcamera-hello`, `vcgencmd`, `hostnamectl`, `apt`, and `systemctl` are Linux/Raspberry Pi OS tools. They do not exist on macOS and will produce `command not found`.
+**Never run a [PI] command on your host machine.** Tools like `raspi-config`, `libcamera-hello`, `vcgencmd`, `hostnamectl`, `apt`, and `systemctl` are Raspberry Pi OS / Linux tools. They do not exist on macOS or Windows and will print `command not found`.
 
-If you are unsure which machine your terminal is connected to, run:
+If you are unsure which machine your terminal is connected to:
 
 ```bash
 hostname
-# If it says "raspberrypi" (or whatever you named it) → you are on the Pi
-# If it says your Mac's name → you are on the Mac
+# "raspberrypi" (or your chosen name) → you are on the Pi
+# anything else → you are on your host machine
 ```
 
 ---
@@ -26,13 +28,19 @@ hostname
 ## Table of Contents
 
 1. [Hardware Requirements](#1-hardware-requirements)
-2. [Mac Prerequisites](#2-mac-prerequisites)
+2. [Host Machine Prerequisites](#2-host-machine-prerequisites)
+   - [macOS](#macos)
+   - [Windows](#windows)
+   - [Linux](#linux)
 3. [Flash Raspberry Pi OS](#3-flash-raspberry-pi-os)
 4. [First Boot — Get Initial Access](#4-first-boot--get-initial-access)
 5. [System Configuration on the Pi](#5-system-configuration-on-the-pi)
 6. [Attach and Enable the CSI Camera](#6-attach-and-enable-the-csi-camera)
-7. [USB-C OTG Gadget Mode — Permanent Mac ↔ Pi Link](#7-usb-c-otg-gadget-mode--permanent-mac--pi-link)
-8. [Configure Mac Networking for USB-C](#8-configure-mac-networking-for-usb-c)
+7. [USB-C OTG Gadget Mode — Install rpi-usb-gadget](#7-usb-c-otg-gadget-mode--install-rpi-usb-gadget)
+8. [Configure Host Networking for USB-C](#8-configure-host-networking-for-usb-c)
+   - [macOS](#macos-1)
+   - [Windows](#windows-1)
+   - [Linux](#linux-1)
 9. [Verify the Connection](#9-verify-the-connection)
 10. [Deploy the RasperifyScanner Backend](#10-deploy-the-rasperify-scanner-backend)
 11. [Run as a System Service — Auto-Start on Boot](#11-run-as-a-system-service--auto-start-on-boot)
@@ -47,86 +55,82 @@ hostname
 | Raspberry Pi 4 Model B (1 GB RAM minimum, 4 GB recommended) | Any RAM variant works; 4 GB gives comfortable headroom for the AI pipeline |
 | MicroSD card ≥ 16 GB, Class 10 / A1 speed rating | Slower cards cause noticeable lag at boot and during pip installs |
 | Raspberry Pi Camera Module v2 or v3 | Connected via the CSI ribbon cable |
-| USB-C cable — **data-capable** | Many USB-C cables carry power only. Use one rated for data (USB 2.0 or higher). Most Android phone charging cables work. Power-only cables are physically identical — if the connection never appears on your Mac, the cable is the first thing to swap. |
-| Mac with a USB-C port | For USB-C OTG networking — the direct, no-router connection method |
-| MicroSD card reader | To flash the OS from your Mac |
-| USB-C power supply, 5V / 3A | Powers the Pi. A 65W laptop charger with USB-C works. |
-| (Optional) HDMI micro-to-full adapter + monitor | Needed only if you choose the HDMI+keyboard first-boot option |
-| (Optional) USB keyboard | Needed only if you choose the HDMI+keyboard first-boot option |
+| USB-C cable — **data-capable** | Many USB-C cables carry power only. Use one rated for data (USB 2.0+). Most Android phone charging cables work. Power-only cables are physically identical — if the gadget interface never appears on your host, swap the cable before troubleshooting anything else. |
+| Host machine with a USB-C or USB-A port | macOS, Windows, or Linux all supported |
+| MicroSD card reader | To flash the OS from your host machine |
+| USB-C power supply, 5V / 3A minimum | When not powering via USB-C OTG. A 65 W laptop charger with USB-C works. |
+| (Optional) HDMI micro-to-full adapter + monitor | Only needed for the HDMI+keyboard first-boot option |
+| (Optional) USB keyboard | Only needed for the HDMI+keyboard first-boot option |
 
 ---
 
-## 2. Mac Prerequisites
+## 2. Host Machine Prerequisites
 
-Install these tools on your Mac **before starting**. They are required by later steps.
+Install these tools on your host machine **before starting**. They are required by later steps.
 
-### Homebrew (Mac package manager)
+---
 
-Homebrew is required to install the other tools. If you already have it, skip this.
+### macOS
 
-**[MAC]** Check if Homebrew is installed:
+#### Homebrew (Mac package manager)
+
+Homebrew is required to install all other Mac tools.
+
+**[MAC]** Check if already installed:
 
 ```bash
 brew --version
-# If this prints a version number (e.g. "Homebrew 4.x.x"), Homebrew is installed — skip the install step below
-# If this prints "command not found: brew", install it now
+# "Homebrew 4.x.x" → already installed, skip the next command
+# "command not found: brew" → install it now
 ```
 
-**[MAC]** Install Homebrew (if not installed):
+**[MAC]** Install Homebrew if not present:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Follow the on-screen prompts. At the end, the installer will print two commands to run to add Homebrew to your PATH — run them before continuing. They look like:
+Follow the prompts. At the end the installer prints two commands to add Homebrew to your PATH — run both before continuing. They look like:
 
 ```bash
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
-Verify it works:
+Verify:
 
 ```bash
 brew --version
 # Expected: Homebrew 4.x.x
 ```
 
----
+#### nmap (network scanner — needed to find the Pi's IP during first boot)
 
-### nmap (network scanner — used to find the Pi's IP)
-
-`nmap` is used to scan your local network and find the Pi's IP address during first boot. It is not installed on macOS by default.
+`nmap` is not installed on macOS by default.
 
 **[MAC]**
 
 ```bash
 # Check if already installed
 nmap --version
-# If this prints "Nmap 7.x", nmap is installed — skip the install step below
-# If this prints "command not found: nmap", install it now
+# "Nmap 7.x" → already installed, skip brew install
+# "command not found: nmap" → install it now
 
 brew install nmap
 ```
 
 > **Why does `nmap -sn 192.168.1.0/24` return nothing?**
-> Your network may use a different subnet than `192.168.1.x`. First find your Mac's actual IP to determine the correct subnet:
+> Your network may not use the `192.168.1.x` subnet. Find your Mac's actual IP first:
 >
 > ```bash
-> # [MAC] Find your Mac's IP on the current network
-> ipconfig getifaddr en0   # WiFi
-> ipconfig getifaddr en1   # Ethernet (if connected)
+> ipconfig getifaddr en0   # WiFi adapter
+> ipconfig getifaddr en1   # Ethernet adapter (if plugged in)
 > ```
 >
-> If your Mac's IP is `192.168.0.105`, your subnet is `192.168.0.0/24`.
-> If it is `10.0.1.50`, your subnet is `10.0.1.0/24`.
-> Use that subnet in the nmap command, not `192.168.1.0/24`.
+> Example: if your Mac's IP is `192.168.0.105`, scan `192.168.0.0/24`.
+> If it is `10.0.1.50`, scan `10.0.1.0/24`.
 
----
-
-### Raspberry Pi Imager
-
-Used to flash the OS onto the MicroSD card.
+#### Raspberry Pi Imager
 
 **[MAC]**
 
@@ -134,145 +138,205 @@ Used to flash the OS onto the MicroSD card.
 brew install --cask raspberry-pi-imager
 ```
 
-Or download directly from https://www.raspberrypi.com/software/ — click "Download for macOS".
+Or download from https://www.raspberrypi.com/software/
+
+---
+
+### Windows
+
+#### Raspberry Pi Imager
+
+Download and install from https://www.raspberrypi.com/software/
+
+#### nmap (to find the Pi's IP during first boot)
+
+Download and install from https://nmap.org/download.html — choose the Windows installer (`.exe`).
+
+After installing, open **Command Prompt** or **PowerShell** and verify:
+
+```cmd
+nmap --version
+```
+
+#### RNDIS driver (required for USB-C gadget networking on Windows)
+
+Windows does not natively recognize the Pi as a USB Ethernet device — it needs a driver.
+
+Download `rpi-usb-gadget-driver-setup.exe` from:
+https://github.com/raspberrypi/rpi-usb-gadget/releases/latest
+
+> Do NOT install this yet — install it after the Pi is physically connected in Section 8. The installer requires the device to be present.
+
+#### Internet Connection Sharing (ICS) — no extra install needed
+
+ICS is built into Windows. You will enable it on your Wi-Fi adapter in Section 8. This allows the Pi to reach the internet through your laptop's Wi-Fi while connected via USB-C.
+
+---
+
+### Linux
+
+#### nmap
+
+**[LINUX]**
+
+```bash
+# Debian/Ubuntu
+sudo apt install nmap
+
+# Fedora
+sudo dnf install nmap
+
+# Arch
+sudo pacman -S nmap
+```
+
+#### Raspberry Pi Imager
+
+**[LINUX]**
+
+```bash
+# Debian/Ubuntu/Raspberry Pi OS
+sudo apt install rpi-imager
+
+# Or download the AppImage from https://www.raspberrypi.com/software/
+```
+
+#### Internet Connection Sharing (ICS) via NetworkManager
+
+Linux uses NetworkManager's "shared" mode. No extra install needed if NetworkManager is running (it is on all major desktop distros).
 
 ---
 
 ## 3. Flash Raspberry Pi OS
 
-> **[MAC]** All steps in this section are performed on your Mac.
+> **[MAC/WIN/LINUX]** All steps in this section are on your host machine.
 
-1. Insert the MicroSD card into your Mac using a card reader.
-2. Open **Raspberry Pi Imager** (installed in Section 2).
-3. Click **Choose OS** → select **Raspberry Pi OS (64-bit)**.
-   - Choose **Raspberry Pi OS Lite (64-bit)** if you want a minimal headless server (recommended — no desktop, smaller image, faster boot).
-   - Choose the full desktop version only if you need a GUI.
-4. Click **Choose Storage** → select your MicroSD card. Double-check the size matches your card — do not accidentally select an external drive.
-5. Click the **gear icon (⚙)** in the bottom-right corner to open **Advanced Options**. Configure all of these before writing:
+1. Insert the MicroSD card into your machine via a card reader.
+2. Open **Raspberry Pi Imager**.
+3. Click **Choose OS** → **Raspberry Pi OS (64-bit)**.
+   - Choose **Raspberry Pi OS Lite (64-bit)** for a minimal headless server (recommended — no desktop, smaller, faster boot).
+   - Choose the full version only if you need a GUI on the Pi.
+4. Click **Choose Storage** → select your MicroSD card. Verify the size matches your card.
+5. Click the **gear icon (⚙)** (bottom-right) to open **Advanced Options** — configure all of these **before** writing:
 
    | Setting | What to set | Why |
    |---|---|---|
-   | Set hostname | `raspberrypi` | Lets you find it with `raspberrypi.local` instead of scanning for its IP |
-   | Enable SSH | Check it. Choose **Use password authentication** | Required to connect remotely — without this you need a monitor and keyboard forever |
-   | Username | `pi` | This is the username you will use in all `ssh pi@...` commands |
-   | Password | A password you will remember | You type this every time you SSH in |
-   | Configure wireless LAN | Enter your WiFi name and password | Required for headless WiFi first-boot (Option B below). Leave blank if using Ethernet or HDMI/keyboard. |
-   | Wireless LAN country | Your 2-letter country code (e.g. `TR`, `US`, `GB`, `DE`) | Required for WiFi to work legally and correctly |
-   | Set locale settings | Your timezone and keyboard layout | Prevents clock drift and keyboard mis-mapping |
+   | Set hostname | `raspberrypi` | Lets you find it as `raspberrypi.local` |
+   | Enable SSH | Checked — **Use password authentication** | Required to connect without a monitor |
+   | Username | `pi` | Used in all `ssh pi@...` commands |
+   | Password | A password you will remember | Entered every time you SSH in |
+   | Configure wireless LAN | Your WiFi name + password | Required for headless WiFi first boot. Leave blank if using Ethernet or HDMI/keyboard. |
+   | Wireless LAN country | Your 2-letter country code (`TR`, `US`, `GB`, `DE` …) | Required for WiFi to function correctly |
+   | Set locale | Your timezone and keyboard layout | Prevents clock drift |
 
-6. Click **Save**, then **Write**.
-7. Wait for the write and verification to finish — usually 3–8 minutes depending on your card speed.
-8. Eject the MicroSD card from your Mac safely (drag to Trash or right-click → Eject).
+6. Click **Save** → **Write**. Wait 3–8 minutes for write + verification.
+7. Eject the MicroSD card safely.
+
+> **Alternatively, enable USB gadget mode directly in Imager 2.0+:**
+> In Advanced Options → Interfaces & Features → enable **"USB Gadget mode"**.
+> This pre-configures everything in Section 7 so you can skip the manual `apt install` steps.
+> The CLI equivalent: `rpi-imager-cli --usb-gadget`
 
 ---
 
 ## 4. First Boot — Get Initial Access
 
-> **Goal:** Reach the Pi with a shell so you can run Section 5 setup commands on it.
->
-> USB-C OTG (the permanent connection method) cannot be set up until you have already SSHed into the Pi at least once. Pick one of the three options below to get that first access.
+> **Goal:** Reach the Pi's shell so you can install the USB gadget software (Section 7). You cannot use USB-C OTG until that software is installed, so you need another way in first.
 
-Insert the MicroSD card into the Pi's card slot (underside of the board).
+Insert the MicroSD card into the Pi's card slot (underside of the board). Pick **one** option.
 
 ---
 
-### Option A: HDMI + Keyboard (no network needed, simplest)
+### Option A: HDMI + Keyboard (no network needed)
 
-1. Connect a monitor to the Pi's **micro-HDMI port** — this is the port labelled "HDMI0", closest to the USB-C power port (not the one furthest away).
-2. Connect a USB keyboard to any of the Pi's USB-A ports.
-3. Connect a USB-C power supply. The Pi powers on and boots automatically — there is no power button.
-4. Wait ~30 seconds for the boot to complete. A login prompt appears on the monitor.
-5. Log in:
-   - Username: `pi`
-   - Password: the password you set in Imager
-6. You now have a shell on the Pi. Continue to [Section 5](#5-system-configuration-on-the-pi).
+1. Connect a monitor to the Pi's **micro-HDMI port** — labelled "HDMI0", the one closest to the USB-C power port.
+2. Connect a USB keyboard to any USB-A port.
+3. Connect a USB-C power supply. The Pi boots automatically (no power button).
+4. Wait ~30 seconds. A login prompt appears.
+5. Log in: username `pi`, password from Imager.
+6. You now have a Pi shell. Continue to [Section 5](#5-system-configuration-on-the-pi).
 
 ---
 
-### Option B: Headless via WiFi (no monitor needed)
+### Option B: Headless via WiFi
 
-**Prerequisite:** You must have filled in the WiFi name and password in Imager's Advanced Options in Section 3. If you did not, use Option A or C instead.
+**Prerequisite:** WiFi credentials must have been entered in Imager Advanced Options (Section 3).
 
-1. Connect the USB-C power supply to the Pi. It boots automatically.
-2. Wait ~60 seconds for the Pi to fully boot and connect to WiFi.
-3. On your Mac, find the Pi's IP address:
+1. Connect USB-C power. The Pi boots and joins your WiFi.
+2. Wait ~60 seconds, then find the Pi's IP on your host machine:
 
 **[MAC]**
 
 ```bash
-# Method 1: mDNS (works on most home networks — try this first)
+# Method 1: mDNS (try first — usually works)
 ping raspberrypi.local
-# If you get replies like "64 bytes from raspberrypi.local (192.168.x.y)" → use that IP
-# Press Ctrl+C to stop
 
-# Method 2: nmap scan (requires nmap from Section 2)
-# First find your Mac's IP to know your subnet:
-ipconfig getifaddr en0
-# Example output: 192.168.1.105  →  your subnet is 192.168.1.0/24
+# Method 2: nmap — find your subnet first
+ipconfig getifaddr en0        # your Mac's WiFi IP
+nmap -sn 192.168.x.0/24 | grep -B2 -i "raspberry"
+# Replace 192.168.x.0/24 with your actual subnet
 
-# Then scan that subnet:
-nmap -sn 192.168.1.0/24 | grep -B2 -i "raspberry"
-# Replace 192.168.1.0/24 with your actual subnet
+# Method 3: ARP table
+arp -a
+# Raspberry Pi MAC addresses start with b8:27:eb, dc:a6:32, or e4:5f:01
 
-# Method 3: Check your router's admin page
-# Open http://192.168.1.1 (or your router's IP) in a browser
-# Look for "Connected devices" or "DHCP clients" — find "raspberrypi"
-
-# Method 4: ARP table (works if Mac and Pi are on the same subnet)
-arp -a | grep -v incomplete
-# Look for a line that appeared recently — the Pi's MAC address starts with b8:27:eb or dc:a6:32 or e4:5f:01
+# Method 4: Router admin page
+# http://192.168.1.1  →  Connected Devices / DHCP Leases  →  look for "raspberrypi"
 ```
 
-4. SSH into the Pi:
+**[WIN]** Open Command Prompt or PowerShell:
 
-**[MAC]**
+```cmd
+ping raspberrypi.local
+
+:: Or with nmap (after installing it from Section 2):
+ipconfig
+:: Note your IPv4 address under "Wi-Fi adapter" to find your subnet
+nmap -sn 192.168.x.0/24
+:: Look for a line mentioning "raspberry" or the Pi's MAC prefix
+```
+
+**[LINUX]**
+
+```bash
+ping raspberrypi.local
+
+# Or with nmap:
+ip route | grep "src"          # shows your default subnet
+nmap -sn 192.168.x.0/24 | grep -B2 -i "raspberry"
+```
+
+3. SSH into the Pi from any host OS:
 
 ```bash
 ssh pi@raspberrypi.local
-# or, if mDNS didn't work:
-ssh pi@192.168.1.xxx   # replace with the IP you found above
+# or
+ssh pi@<ip-address-you-found>
 ```
 
-5. The first time you SSH to a new Pi you will see:
-
-```
-The authenticity of host 'raspberrypi.local' can't be established.
-ED25519 key fingerprint is SHA256:xxxx...
-Are you sure you want to continue connecting (yes/no/[fingerprint])?
-```
-
-Type `yes` and press Enter. Enter your password when prompted.
-
-6. You now have a shell on the Pi. Continue to [Section 5](#5-system-configuration-on-the-pi).
+4. First-time connection shows a fingerprint warning — type `yes` and press Enter. Enter your password.
 
 ---
 
-### Option C: Headless via Ethernet Cable
+### Option C: Headless via Ethernet
 
-1. Plug an Ethernet cable between the Pi and your router (not directly to your Mac — direct Mac-to-Pi Ethernet requires manual static IP configuration on both ends).
-2. Connect the USB-C power supply. The Pi boots and gets a DHCP IP from your router.
-3. Wait ~60 seconds, then find the Pi's IP using the same methods as Option B (mDNS, nmap, or router admin page).
-4. SSH in: `ssh pi@<ip-address>`
+1. Plug an Ethernet cable between the Pi and your router (not directly to your host — direct requires manual static IPs on both sides).
+2. Connect USB-C power.
+3. Wait ~60 seconds. Find the IP using the same methods as Option B.
+4. SSH: `ssh pi@<ip>`
 
 ---
 
 ## 5. System Configuration on the Pi
 
-> **[PI]** Every command in this section must be run on the Pi — either via SSH or directly on the Pi with a keyboard attached.
->
-> `hostnamectl`, `apt`, `raspi-config`, and `systemctl` are Linux commands. They do not exist on macOS. If you accidentally run them on your Mac, they will print `command not found` — nothing is broken, just switch to the Pi terminal.
+> **[PI]** Every command below runs on the Pi via SSH.
+> `hostnamectl`, `apt`, `raspi-config`, `systemctl` are Linux-only tools — they will fail on macOS/Windows.
 
 ### Update all packages
 
 ```bash
 # [PI]
 sudo apt update && sudo apt full-upgrade -y
-```
-
-This downloads and installs all available updates. It may take 2–10 minutes on first run. When it finishes, reboot:
-
-```bash
-# [PI]
 sudo reboot
 ```
 
@@ -280,16 +344,14 @@ Wait ~30 seconds, then reconnect via SSH.
 
 ---
 
-### Set the hostname (only if you skipped it in Imager)
-
-> Skip this if you already set the hostname to `raspberrypi` in Imager's Advanced Options.
+### Set hostname (only if you skipped it in Imager)
 
 ```bash
-# [PI] — run this ON THE PI, not on your Mac
+# [PI] — this is a Linux command, run it on the Pi only
 sudo hostnamectl set-hostname raspberrypi
 ```
 
-`hostnamectl` is a Linux systemd tool. It does not exist on macOS — this is the cause of `command not found: hostnamectl` if you ran it in a Mac terminal. Always verify which machine your terminal is on before running commands.
+> `hostnamectl` does not exist on macOS or Windows. The `command not found: hostnamectl` error you may have seen earlier means it was accidentally run on the host machine, not the Pi.
 
 ---
 
@@ -308,8 +370,6 @@ sudo apt install -y \
   curl
 ```
 
-These packages are only available through `apt` on Raspberry Pi OS. Do not run `apt` on your Mac.
-
 ### Verify Python
 
 ```bash
@@ -324,63 +384,46 @@ python3.11 --version
 
 ### Physical wiring
 
-> **Power off the Pi completely before touching the ribbon cable.** Connecting or disconnecting the camera while powered can damage the camera module.
-
-**[PI]** Shut down cleanly:
+> **Power off the Pi before touching the ribbon cable.**
 
 ```bash
+# [PI]
 sudo shutdown -h now
 ```
 
-Wait until the green activity LED on the Pi stops flashing. Then unplug the USB-C power cable.
+Wait until the green activity LED stops flashing, then unplug the USB-C power cable.
 
 **Connect the ribbon cable:**
 
-1. Find the **CSI camera port** on the Pi. It is the narrow black connector located between the two HDMI ports and the USB-A ports. It has a small label "CAMERA" printed on the board.
-2. Gently lift the brown plastic locking tab straight up — it rises about 2 mm. It does not detach.
-3. Slide in the ribbon cable. The **blue strip** on the cable must face toward the USB-A ports. The metal contacts (silver lines) must face away from you toward the HDMI side.
-4. Hold the cable in place and press the brown locking tab back down firmly until it clicks flat.
-5. Connect the other end of the ribbon cable to the camera module the same way: lift tab, insert cable with blue strip toward the lens, press tab down.
-6. Reconnect the USB-C power cable. The Pi boots automatically.
-
-Reconnect via SSH after ~30 seconds.
-
----
+1. Find the **CSI camera port** — the narrow black connector between the two HDMI ports and the USB-A ports, labelled "CAMERA".
+2. Lift the brown plastic locking tab straight up (~2 mm). It does not detach.
+3. Slide in the ribbon cable: the **blue strip faces toward the USB-A ports**, metal contacts face the HDMI side.
+4. Press the brown locking tab firmly flat.
+5. Connect the other end to the camera module the same way: lift tab, blue strip toward the lens, press tab down.
+6. Reconnect USB-C power. Reconnect via SSH after ~30 seconds.
 
 ### Enable the camera interface
 
-**[PI]**
-
 ```bash
+# [PI]
 sudo raspi-config
 ```
 
-Navigate with arrow keys:
-
-```
-Interface Options → Camera → Yes → Finish → Reboot
-```
+Navigate: **Interface Options → Camera → Yes → Finish → Reboot**
 
 Reconnect via SSH after the reboot.
 
----
-
 ### Verify the camera
 
-**[PI]**
-
 ```bash
-# Check hardware detection
+# [PI]
 vcgencmd get_camera
 # Expected: supported=1 detected=1, libcamera interfaces=1
 
-# Run a 5-second live preview (exits cleanly — no display needed over SSH)
 libcamera-hello --timeout 5000
 
-# Capture a test image
 libcamera-jpeg -o /tmp/test.jpg && echo "Camera OK"
 
-# Verify from Python
 python3 -c "
 from picamera2 import Picamera2
 cam = Picamera2()
@@ -390,248 +433,322 @@ cam.stop()
 "
 ```
 
-**If `vcgencmd get_camera` shows `detected=0`:**
-- Power off, open both ribbon cable connectors, reseat the cable, and lock firmly.
-- The most common cause is the brown tab not being fully pressed down at one end.
+**If `detected=0`:** Power off, reseat both ribbon cable ends (press locking tabs firmly closed), power on.
 
 ---
 
-## 7. USB-C OTG Gadget Mode — Permanent Mac ↔ Pi Link
+## 7. USB-C OTG Gadget Mode — Install rpi-usb-gadget
 
-> **What this does:** Configures the Pi to appear as a USB Ethernet adapter when plugged into your Mac. After this one-time setup, the USB-C cable both powers the Pi and provides a direct network link — no router, no WiFi, no DHCP server needed.
+> This section uses the **official Raspberry Pi USB gadget package** from
+> https://github.com/raspberrypi/rpi-usb-gadget
 >
-> **Cable:** Must be a data-capable USB-C cable. Power-only cables are physically identical but carry no data. If the Mac interface never appears after completing all steps, swap the cable before troubleshooting anything else.
+> It replaces the manual `config.txt` / `cmdline.txt` editing used in older guides. The package handles all of that automatically and adds auto-switching between two networking modes.
 
-> **[PI]** All commands in this section run on the Pi via your existing SSH session.
+**[PI]** — run inside your SSH session.
 
----
-
-### Step 1 — Add the USB OTG overlay to the boot config
+### Install the package
 
 ```bash
 # [PI]
-echo "dtoverlay=dwc2" | sudo tee -a /boot/firmware/config.txt
-```
+sudo apt update
+sudo apt install rpi-usb-gadget
 
-Verify it was added:
+# Enable gadget mode
+sudo rpi-usb-gadget on
 
-```bash
-# [PI]
-tail -5 /boot/firmware/config.txt
-# The last line must read exactly: dtoverlay=dwc2
-```
-
-> **Do not edit `/boot/firmware/config.txt` by mounting the SD card on your Mac** and opening it in TextEdit or VS Code. Mac text editors can add Windows-style line endings (CRLF) that corrupt the file. Always edit it via SSH on the Pi.
-
----
-
-### Step 2 — Enable the gadget Ethernet kernel module
-
-`/boot/firmware/cmdline.txt` is a single-line file. If a newline is added to it, the Pi will fail to boot and enter emergency mode. Use the `sed` command below — it appends to the existing line safely.
-
-```bash
-# [PI]
-# First check what is already in the file
-cat /boot/firmware/cmdline.txt
-# Expected: one long line ending with "rootwait"
-
-# Append the module load instruction to that same line
-sudo sed -i 's/$/ modules-load=dwc2,g_ether/' /boot/firmware/cmdline.txt
-
-# Verify: must still be ONE line, ending with g_ether
-cat /boot/firmware/cmdline.txt
-# Expected end: ... rootwait modules-load=dwc2,g_ether
-```
-
-> If `modules-load=dwc2,g_ether` already appears in the file from a previous attempt, do not run the `sed` command again — it would duplicate the entry.
-
----
-
-### Step 3 — Assign a static IP to the USB network interface
-
-```bash
-# [PI]
-sudo tee /etc/network/interfaces.d/usb0 <<EOF
-auto usb0
-iface usb0 inet static
-    address 192.168.7.2
-    netmask 255.255.255.0
-EOF
-
-# Verify the file
-cat /etc/network/interfaces.d/usb0
-```
-
----
-
-### Step 4 — Reboot the Pi with the USB-C cable connected to your Mac
-
-Plug the USB-C data cable into your Mac **before** issuing the reboot command. This ensures the USB gadget device registers on the Mac during the Pi's boot sequence.
-
-```bash
-# [PI]
+# Reboot — plug the USB-C cable into your host before rebooting
 sudo reboot
 ```
 
-Wait ~45 seconds for the Pi to fully boot.
+> **What `rpi-usb-gadget on` does automatically:**
+> - Adds `dtoverlay=dwc2,dr_mode=peripheral` to `/boot/firmware/config.txt`
+> - Adds `modules-load=dwc2,g_ether` to `/boot/firmware/cmdline.txt`
+> - Creates two NetworkManager profiles on `usb0`
+> - Enables the `rpi-usb-gadget-ics.service` auto-switcher
+>
+> You do NOT need to edit `config.txt` or `cmdline.txt` manually.
+
+### Check gadget status
+
+```bash
+# [PI]
+sudo rpi-usb-gadget status
+```
 
 ---
 
-## 8. Configure Mac Networking for USB-C
+### How the auto-switching works (important — read this)
 
-> **[MAC]** All steps in this section are performed on your Mac.
+The Pi runs two network profiles on the USB interface (`usb0`) and automatically switches between them:
 
-After the Pi reboots, a new network interface appears on your Mac. You need to assign a static IP to it.
+| Mode | When it activates | Pi IP | Host IP |
+|---|---|---|---|
+| **CLIENT mode** | Host has Internet Connection Sharing (ICS) enabled | Assigned by host DHCP (e.g. `192.168.137.x` on Windows, `192.168.2.x` on macOS, `10.42.0.x` on Linux) | Windows: `192.168.137.1` / macOS: `192.168.2.1` / Linux: `10.42.0.1` |
+| **SHARED mode** | No ICS detected on host | `10.12.194.1` (fixed) | `10.12.194.2`–`10.12.194.14` (DHCP from Pi) |
 
-### Assign a static IP on the Mac
+**The switcher checks every ~4 seconds** by probing for a known ICS gateway via ARP. If ICS is active on your host, the Pi becomes a client and gets internet through the host. If ICS is off, the Pi becomes the DHCP server and gives the host an IP in the `10.12.194.x` range.
 
-1. Open **System Settings** → **Network** (or **System Preferences → Network** on older macOS).
-2. In the left sidebar, look for a new interface named one of:
-   - `RNDIS/ECM Gadget`
-   - `USB 10/100 LAN`
-   - `USB Ethernet`
-   
-   If you do not see it: the cable is power-only, or the Pi did not fully boot, or Steps 1–2 of Section 7 were not applied correctly. See [Section 12](#12-diagnostics-and-troubleshooting).
-
-3. Click on the interface → click **Details...** (macOS Ventura/Sonoma) or the gear icon (older macOS).
-4. Go to the **TCP/IP** tab.
-5. Change **Configure IPv4** from `Using DHCP` to **Manually**.
-6. Set:
-   - **IP Address:** `192.168.7.1`
-   - **Subnet Mask:** `255.255.255.0`
-   - **Router:** *(leave completely blank)*
-7. Click **OK**, then **Apply**.
-
-### Verify the Mac interface is configured
-
-**[MAC]**
+**In SHARED mode (no ICS), the Pi is always reachable at `10.12.194.1`:**
 
 ```bash
-ifconfig | grep -A4 "192.168.7"
-# Expected output: inet 192.168.7.1 netmask 0xffffff00 broadcast 192.168.7.255
+ssh pi@10.12.194.1
+curl http://10.12.194.1:8000/api/v1/health
+```
+
+**In CLIENT mode (with ICS), use mDNS:**
+
+```bash
+ssh pi@raspberrypi.local
+curl http://raspberrypi.local:8000/api/v1/health
+```
+
+> **VPN warning:** Disable any VPN on your host before connecting. VPNs intercept the local routing table and block the USB gadget link.
+
+---
+
+## 8. Configure Host Networking for USB-C
+
+Plug the USB-C data cable into your host machine, then follow the section for your OS.
+
+---
+
+### macOS
+
+macOS recognises the Pi as a **CDC-ECM** USB Ethernet adapter — no driver needed.
+
+After the Pi finishes booting, a new network interface appears in System Settings:
+
+1. Open **System Settings → Network**.
+2. Look for a new interface named `RNDIS/ECM Gadget`, `USB 10/100 LAN`, or `USB Ethernet`.
+3. If you see it: **no further configuration is required for SHARED mode**. The Pi's DHCP server assigns your Mac an IP in `10.12.194.x` automatically.
+4. Verify:
+
+```bash
+# [MAC]
+ifconfig | grep -A4 "10.12.194"
+# Expected: inet 10.12.194.2 (or similar)
+
+ping 10.12.194.1
+# Expected: replies from the Pi
+```
+
+#### Optional: Enable Internet Connection Sharing (CLIENT mode)
+
+Enabling ICS lets the Pi access the internet through your Mac's WiFi.
+
+1. **System Settings → General → Sharing → Internet Sharing** (macOS Ventura/Sonoma)
+   or **System Preferences → Sharing → Internet Sharing** (older macOS).
+2. Share connection from: **Wi-Fi**
+3. To computers using: check the USB gadget interface (`RNDIS/ECM Gadget` or `USB Ethernet`)
+4. Turn **Internet Sharing** on.
+
+macOS assigns itself `192.168.2.1` on the gadget interface and hands the Pi a `192.168.2.x` IP via DHCP. The Pi's auto-switcher detects this and switches to CLIENT mode within ~10 seconds.
+
+```bash
+# [MAC] After enabling ICS, verify
+ping raspberrypi.local
+ssh pi@raspberrypi.local
+```
+
+---
+
+### Windows
+
+Windows requires a driver before the Pi is recognised. Follow these steps in order.
+
+#### Step 1 — Install the RNDIS driver
+
+1. With the Pi's USB-C cable plugged into your PC, open **Device Manager** (`Win + X → Device Manager`).
+2. Look for an unknown device — it may appear as `RNDIS` or `USB Ethernet/RNDIS Gadget` under "Other devices" with a yellow warning icon.
+3. Run `rpi-usb-gadget-driver-setup.exe` (downloaded in Section 2).
+4. Follow the installer. It adds the driver via `pnputil`.
+5. After installation, Device Manager should show **"Raspberry Pi USB Remote NDIS Network Device"** under Network Adapters.
+
+If the device still shows as unknown after installing the driver: unplug and replug the USB-C cable.
+
+#### Step 2 — Verify basic connectivity (SHARED mode, no ICS)
+
+Without ICS, the Pi is in SHARED mode and assigns your PC an IP in `10.12.194.x`.
+
+**[WIN]** Open Command Prompt or PowerShell:
+
+```cmd
+ping 10.12.194.1
+:: Expected: replies from the Pi
+
+ssh pi@10.12.194.1
+```
+
+#### Step 3 — Enable Internet Connection Sharing (optional, CLIENT mode)
+
+ICS lets the Pi use the internet through your PC's WiFi.
+
+1. Open **Control Panel → Network and Internet → Network Connections** (or press `Win+R`, type `ncpa.cpl`, Enter).
+2. Right-click your **Wi-Fi adapter** → **Properties**.
+3. Go to the **Sharing** tab.
+4. Check **"Allow other network users to connect through this computer's Internet connection"**.
+5. In the dropdown "Home networking connection", select **Raspberry Pi USB Remote NDIS Network Device**.
+6. Click **OK**.
+
+Windows assigns itself `192.168.137.1` on the gadget NIC. The Pi's auto-switcher detects this gateway and switches to CLIENT mode, receiving a `192.168.137.x` IP.
+
+```cmd
+:: [WIN] Verify after enabling ICS
+ping raspberrypi.local
+ssh pi@raspberrypi.local
+```
+
+#### Troubleshooting Windows
+
+| Symptom | Fix |
+|---|---|
+| "Unidentified adapter" / yellow warning in Device Manager | RNDIS driver not installed — run `rpi-usb-gadget-driver-setup.exe` |
+| Pi shows `169.254.x.x` (APIPA address) | ICS is not active, or not bound to the gadget NIC — recheck Step 3 |
+| Flapping between CLIENT/SHARED | Windows didn't bind ICS to the correct adapter — disable and re-enable ICS |
+| Pi not showing in Device Manager at all | USB-C cable is power-only — swap to a data cable |
+| SSH timeout via `raspberrypi.local` | Disable your VPN; or use IP `192.168.137.x` directly |
+
+To manually push the Pi into CLIENT mode from the Pi side:
+
+```bash
+# [PI]
+sudo nmcli con up 'USB Gadget (client)'
+```
+
+---
+
+### Linux
+
+Linux recognises the Pi as a **CDC-ECM** device — no driver needed.
+
+After plugging in the USB-C cable and the Pi boots, a new interface appears (usually `usb0` or `enx...`).
+
+**[LINUX]** Verify:
+
+```bash
+ip addr
+# Look for an interface named usb0 or enx<mac> with an IP in 10.12.194.x
+
+ping 10.12.194.1
+ssh pi@10.12.194.1
+```
+
+#### Enable Internet Connection Sharing via NetworkManager (optional, CLIENT mode)
+
+```bash
+# [LINUX] Find the gadget interface name (usb0 or enx...)
+ip link show | grep -i "usb\|enx"
+
+# Enable shared/ICS mode on it (replace usb0 with your interface name)
+nmcli con add type ethernet ifname usb0 con-name "pi-gadget-ics" \
+  ipv4.method shared
+
+nmcli con up "pi-gadget-ics"
+```
+
+This assigns your Linux machine `10.42.0.1` on the gadget interface and gives the Pi a `10.42.0.x` IP via DHCP. The Pi's auto-switcher detects the `10.42.0.1` gateway and switches to CLIENT mode.
+
+```bash
+# [LINUX] Verify after enabling ICS
+ping raspberrypi.local
+ssh pi@raspberrypi.local
 ```
 
 ---
 
 ## 9. Verify the Connection
 
-**[MAC]**
+From your host machine, confirm you can reach the Pi. Use the correct IP for your mode:
 
-```bash
-# Step 1: Can you reach the Pi by IP?
-ping 192.168.7.2
-# Expected: 64 bytes from 192.168.7.2: icmp_seq=0 ttl=64 time=0.5 ms
-# Press Ctrl+C to stop
+| Mode | Pi IP | SSH command |
+|---|---|---|
+| SHARED (no ICS) | `10.12.194.1` | `ssh pi@10.12.194.1` |
+| CLIENT — Windows ICS | `192.168.137.x` (check via `raspberrypi.local`) | `ssh pi@raspberrypi.local` |
+| CLIENT — macOS ICS | `192.168.2.x` | `ssh pi@raspberrypi.local` |
+| CLIENT — Linux ICS | `10.42.0.x` | `ssh pi@raspberrypi.local` |
 
-# Step 2: Can you SSH into the Pi over USB-C?
-ssh pi@192.168.7.2
-# Enter password → you are now on the Pi
-```
-
-**[PI]** — from inside the SSH session, confirm the USB interface is up:
+**[PI]** — from inside the SSH session, verify the USB interface:
 
 ```bash
 ip addr show usb0
 # Look for: state UP
-# Look for: inet 192.168.7.2/24
+# Look for: inet <ip>/xx
+
+# Check which mode the switcher chose
+sudo systemctl status rpi-usb-gadget-ics
 ```
 
----
+**[ANY HOST]** Verify the backend (after Section 10):
 
-### What to do if `ping 192.168.7.2` fails
+```bash
+# SHARED mode
+curl http://10.12.194.1:8000/api/v1/health
 
-Work through these checks in order:
-
-| Check | Command | Expected |
-|---|---|---|
-| Is the Pi visible as a USB device at all? | `[MAC] system_profiler SPUSBDataType \| grep -A8 -i "raspberry\|rndis\|gadget"` | Lines mentioning "RNDIS" or "Linux" or "Gadget" |
-| Did a new network interface appear? | `[MAC] networksetup -listallhardwareports` | A line mentioning USB or Gadget |
-| Is the Mac IP set correctly? | `[MAC] ifconfig \| grep "192.168.7"` | `inet 192.168.7.1` |
-| Is `dtoverlay=dwc2` in the Pi's boot config? | `[PI] grep dwc2 /boot/firmware/config.txt` | `dtoverlay=dwc2` |
-| Is the module load in cmdline.txt? | `[PI] grep dwc2 /boot/firmware/cmdline.txt` | `modules-load=dwc2,g_ether` |
-| Is the Pi USB interface up? | `[PI] ip addr show usb0` | `state UP` and `inet 192.168.7.2` |
-
-**Most common causes in order:**
-1. Power-only USB-C cable — swap the cable first before anything else
-2. `dtoverlay=dwc2` not saved correctly in config.txt
-3. `modules-load=dwc2,g_ether` not saved correctly in cmdline.txt (or was accidentally duplicated)
-4. Mac-side IP is not set to `192.168.7.1` manually (still on DHCP)
-
-**If the Pi boots to emergency/maintenance mode** (`cmdline.txt` got corrupted with a newline):
-Reflash the MicroSD card following Section 3 and redo Sections 4–7.
+# CLIENT mode
+curl http://raspberrypi.local:8000/api/v1/health
+```
 
 ---
 
 ## 10. Deploy the RasperifyScanner Backend
 
-> **[PI]** All commands in this section run on the Pi. SSH in via `ssh pi@192.168.7.2`.
+> **[PI]** All commands run on the Pi via SSH.
 
 ### Clone the repository
 
 ```bash
-# [PI]
 cd ~
 git clone https://github.com/<your-username>/RasperifyScanner.git
 cd RasperifyScanner/backend
 ```
 
-Replace `<your-username>` with your actual GitHub username.
-
-### Create a Python virtual environment
+### Create a virtual environment
 
 ```bash
-# [PI]
 python3.11 -m venv .venv
 source .venv/bin/activate
+# Prompt changes to (.venv) — virtual environment is active
 ```
-
-Your prompt will change to show `(.venv)` — this means the virtual environment is active.
 
 ### Install Python dependencies
 
 ```bash
-# [PI] (virtual environment must be active)
 pip install --upgrade pip
 pip install -r requirements.txt
+# Takes 5–15 minutes on Pi hardware
 ```
-
-This may take 5–15 minutes on a Pi. `picamera2` is included; on the Pi it uses the system-installed library.
 
 ### Configure environment variables
 
 ```bash
-# [PI]
 cp .env.example .env
 nano .env
 ```
 
-Edit the following values:
-
-| Variable | What to set | Where to get it |
+| Variable | Value | Notes |
 |---|---|---|
 | `GEMINI_API_KEY` | Your Google Gemini API key | https://aistudio.google.com/ → Get API Key |
-| `OPENAI_API_KEY` | Your OpenAI API key | Optional — used as fallback if Gemini fails |
-| `SECRET_KEY` | A random 32-character hex string | Generate one: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
-| `CAMERA_MOCK` | `false` | Set `true` only when running on Mac in development mode |
+| `OPENAI_API_KEY` | Your OpenAI API key | Optional — Gemini fallback |
+| `SECRET_KEY` | Random 32-char hex string | Generate: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+| `CAMERA_MOCK` | `false` | Set `true` only for Mac development without a camera |
 
-Save and exit nano: press `Ctrl+X`, then `Y`, then `Enter`.
+Save in nano: `Ctrl+X` → `Y` → `Enter`.
 
-### Test-run the backend
+### Test-run
 
 ```bash
-# [PI]
 source .venv/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Open a second terminal on your Mac and verify:
+From your host, verify:
 
 ```bash
-# [MAC]
-curl http://192.168.7.2:8000/api/v1/health | python3 -m json.tool
+# SHARED mode
+curl http://10.12.194.1:8000/api/v1/health | python3 -m json.tool
 ```
 
-Expected response:
+Expected:
 
 ```json
 {
@@ -639,7 +756,7 @@ Expected response:
   "camera_connected": true,
   "active_adapter": "usb",
   "adapters": [
-    {"name": "usb",      "interface": "usb0",  "up": true,  "ip": "192.168.7.2"},
+    {"name": "usb",      "interface": "usb0",  "up": true,  "ip": "10.12.194.1"},
     {"name": "ethernet", "interface": "eth0",  "up": false, "ip": null},
     {"name": "wifi",     "interface": "wlan0", "up": false, "ip": null}
   ],
@@ -649,15 +766,13 @@ Expected response:
 }
 ```
 
-Interactive API docs are available at: `http://192.168.7.2:8000/docs`
+Interactive API docs: `http://10.12.194.1:8000/docs` (or `http://raspberrypi.local:8000/docs` in CLIENT mode).
 
-Press `Ctrl+C` in the Pi terminal to stop the test run before continuing to Section 11.
+Press `Ctrl+C` to stop the test run before continuing.
 
 ---
 
 ## 11. Run as a System Service — Auto-Start on Boot
-
-This configures the backend to start automatically whenever the Pi is powered on — no manual SSH or uvicorn command needed.
 
 **[PI]**
 
@@ -682,23 +797,20 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable rasperify
 sudo systemctl start rasperify
-
-# Check the service started cleanly
 sudo systemctl status rasperify
+# Expected: Active: active (running)
 ```
 
-You should see `Active: active (running)`.
-
-**Useful service management commands:**
+**Service management:**
 
 ```bash
-# [PI] View live logs (Ctrl+C to stop)
+# [PI] Live logs
 sudo journalctl -u rasperify -f
 
-# [PI] Stop the service
+# [PI] Stop
 sudo systemctl stop rasperify
 
-# [PI] Restart after pulling a code update
+# [PI] Update and restart
 cd ~/RasperifyScanner && git pull
 sudo systemctl restart rasperify
 ```
@@ -707,59 +819,85 @@ sudo systemctl restart rasperify
 
 ## 12. Diagnostics and Troubleshooting
 
-### USB-C interface not appearing on Mac
+### USB-C interface not appearing on host
+
+**[MAC]**
 
 ```bash
-# [MAC] Is the Pi detected as a USB device at all?
+# Is the Pi detected as a USB device?
 system_profiler SPUSBDataType | grep -A8 -i "raspberry\|rndis\|linux\|gadget"
 
-# [MAC] Does a USB Ethernet interface appear in the network list?
+# Does a USB Ethernet interface appear?
 networksetup -listallhardwareports
-# Look for a Hardware Port line mentioning USB or Gadget
 
-# [MAC] Is the Mac IP set correctly?
-ifconfig | grep -A4 "192.168.7"
-# Must show: inet 192.168.7.1
+# Does the Pi have an IP on the USB link?
+ifconfig | grep -A4 "10.12.194"
+```
 
-# [PI] Are both boot files correct?
-grep dwc2 /boot/firmware/config.txt
-grep dwc2 /boot/firmware/cmdline.txt
+**[WIN]** Open Device Manager (`Win+X → Device Manager`) and check under "Network Adapters" for "Raspberry Pi USB Remote NDIS Network Device".
+
+**[LINUX]**
+
+```bash
+lsusb | grep -i "raspberry\|rndis\|linux"
+ip link show
+```
+
+**Most common causes in order:**
+1. Power-only USB-C cable — swap the cable first
+2. `rpi-usb-gadget on` was not run, or the Pi was not rebooted after
+3. Windows: RNDIS driver not installed
+4. VPN active on the host — disable it
+
+---
+
+### Check gadget mode status on the Pi
+
+```bash
+# [PI]
+sudo rpi-usb-gadget status
+
+# Check if the USB interface is up
+ip addr show usb0
+
+# Check the auto-switcher service
+sudo systemctl status rpi-usb-gadget-ics
+sudo journalctl -u rpi-usb-gadget-ics -n 30 --no-pager
 ```
 
 ---
 
 ### Finding Pi's IP without nmap
 
-If `nmap` is not installed and `raspberrypi.local` does not resolve:
-
 ```bash
-# [MAC] Check the ARP table after the Pi connects to the same network
+# [MAC] ARP table (works on same subnet)
 arp -a
-# Raspberry Pi MAC addresses start with: b8:27:eb  or  dc:a6:32  or  e4:5f:01
+# Pi MAC prefixes: b8:27:eb  dc:a6:32  e4:5f:01
 
-# [MAC] Check your router admin page
-# Usually at http://192.168.1.1 or http://192.168.0.1
-# Look for "Connected devices" or "DHCP leases" — find "raspberrypi"
+# [WIN]
+arp -a
 
-# [MAC] Find your own Mac IP to know the subnet
-ipconfig getifaddr en0    # WiFi
-ipconfig getifaddr en1    # Ethernet
-# Then scan: nmap -sn <your-subnet>.0/24
+# [LINUX]
+arp -n
+
+# Any OS: check router admin page
+# Usually http://192.168.1.1 → Connected Devices / DHCP Leases → find "raspberrypi"
 ```
 
 ---
 
-### `command not found` errors on Mac
+### `command not found` errors
 
-| Command that failed | Why | Fix |
+| Command that failed | Correct machine | Fix |
 |---|---|---|
-| `hostnamectl` | Linux-only command — must run on the Pi | SSH into the Pi first, then run it |
-| `raspi-config` | Raspberry Pi OS tool — does not exist on macOS | SSH into the Pi |
-| `apt` | Debian/Ubuntu package manager — does not exist on macOS | SSH into the Pi |
-| `libcamera-hello` | Raspberry Pi camera tool | SSH into the Pi |
-| `vcgencmd` | Raspberry Pi firmware tool | SSH into the Pi |
-| `nmap` | Not installed on Mac by default | `brew install nmap` |
-| `brew` | Homebrew not installed | See [Section 2](#2-mac-prerequisites) |
+| `hostnamectl` | [PI] only | SSH into the Pi first |
+| `raspi-config` | [PI] only | SSH into the Pi first |
+| `apt` / `apt-get` | [PI] only | SSH into the Pi first |
+| `libcamera-hello` | [PI] only | SSH into the Pi first |
+| `vcgencmd` | [PI] only | SSH into the Pi first |
+| `rpi-usb-gadget` | [PI] only | SSH into the Pi first |
+| `nmap` | [MAC] not pre-installed | `brew install nmap` |
+| `brew` | [MAC] not installed | See [Section 2 → macOS](#macos) |
 
 ---
 
@@ -773,10 +911,10 @@ vcgencmd get_camera
 libcamera-hello --timeout 3000
 ```
 
-**If `detected=0`:**
-- Power off the Pi, reseat both ends of the ribbon cable, press locking tabs firmly closed, power on.
-- Run `sudo raspi-config` → Interface Options → Camera → Enable → Reboot.
-- Check `/boot/firmware/config.txt` contains `camera_auto_detect=1` (the default — do not remove it).
+**Fixes:**
+- Power off, reseat both ribbon cable ends, press tabs firmly, power on.
+- `sudo raspi-config` → Interface Options → Camera → Enable → Reboot.
+- Confirm `/boot/firmware/config.txt` contains `camera_auto_detect=1`.
 
 ---
 
@@ -787,42 +925,33 @@ libcamera-hello --timeout 3000
 sudo journalctl -u rasperify -n 50 --no-pager
 ```
 
-| Error message | Fix |
+| Error | Fix |
 |---|---|
 | `ModuleNotFoundError: No module named 'picamera2'` | `sudo apt install python3-picamera2` |
 | `Address already in use` — port 8000 | `sudo fuser -k 8000/tcp` then `sudo systemctl restart rasperify` |
-| `GEMINI_API_KEY not set` | Edit `~/RasperifyScanner/backend/.env` and add the key |
-| `Permission denied: /dev/video0` | `sudo usermod -aG video pi` then log out and back in |
-
----
-
-### SSH connection refused
-
-```bash
-# [PI] Check SSH service (requires keyboard/monitor if you can't SSH at all)
-sudo systemctl status ssh
-
-# If inactive:
-sudo systemctl enable ssh
-sudo systemctl start ssh
-```
+| `GEMINI_API_KEY not set` | Edit `~/RasperifyScanner/backend/.env` |
+| `Permission denied: /dev/video0` | `sudo usermod -aG video pi` then reconnect SSH |
 
 ---
 
 ## Quick Reference
 
-### IP addresses
+### Connection IP addresses
 
-| Connection method | Pi IP | Mac IP | SSH command |
-|---|---|---|---|
-| USB-C OTG | `192.168.7.2` | `192.168.7.1` | `ssh pi@192.168.7.2` |
-| Ethernet (DHCP) | run `ip addr show eth0` on Pi | your Mac's LAN IP | `ssh pi@<eth0-ip>` |
-| WiFi (DHCP) | run `hostname -I` on Pi | your Mac's WiFi IP | `ssh pi@raspberrypi.local` |
+| Mode | Pi IP | SSH |
+|---|---|---|
+| USB-C SHARED (no ICS) | `10.12.194.1` | `ssh pi@10.12.194.1` |
+| USB-C CLIENT — Windows ICS | assigned by Windows (`192.168.137.x`) | `ssh pi@raspberrypi.local` |
+| USB-C CLIENT — macOS ICS | assigned by Mac (`192.168.2.x`) | `ssh pi@raspberrypi.local` |
+| USB-C CLIENT — Linux ICS | assigned by Linux (`10.42.0.x`) | `ssh pi@raspberrypi.local` |
+| Ethernet (DHCP) | run `ip addr show eth0` on Pi | `ssh pi@<eth0-ip>` |
+| WiFi (DHCP) | run `hostname -I` on Pi | `ssh pi@raspberrypi.local` |
 
 ### Backend URLs
 
-| What | URL |
-|---|---|
-| Health check | `http://192.168.7.2:8000/api/v1/health` |
-| Interactive API docs | `http://192.168.7.2:8000/docs` |
-| Full API reference | [API_REFERENCE.md](API_REFERENCE.md) |
+| Mode | Health check | API docs |
+|---|---|---|
+| USB-C SHARED | `http://10.12.194.1:8000/api/v1/health` | `http://10.12.194.1:8000/docs` |
+| USB-C CLIENT / WiFi / Ethernet | `http://raspberrypi.local:8000/api/v1/health` | `http://raspberrypi.local:8000/docs` |
+
+Full API reference: [API_REFERENCE.md](API_REFERENCE.md)
