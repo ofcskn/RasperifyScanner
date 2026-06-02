@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./config:/config
+    environment:
+      - NETWORK_CONFIG_PATH=/config/network.yml
+      - DATABASE_URL=sqlite+aiosqlite:///./rasperify.db
+      - CAMERA_MOCK=true
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -1,0 +1,19 @@
+# Adapter priority — first UP interface wins
+adapters:
+  - name: usb
+    interface: usb0
+    description: USB-C OTG gadget mode (Pi connected to Mac via USB-C)
+  - name: ethernet
+    interface: eth0
+    description: Ethernet cable adapter
+  - name: wifi
+    interface: wlan0
+    description: WiFi adapter
+
+# Static IP for USB-C OTG mode (configured on both Pi and Mac)
+usb_static_ip: "192.168.7.2"
+mac_static_ip: "192.168.7.1"
+
+# FastAPI binds to 0.0.0.0 — all adapters served simultaneously
+server_host: "0.0.0.0"
+server_port: 8000

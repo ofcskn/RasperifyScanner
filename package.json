@@ -1,0 +1,15 @@
+{
+  "name": "rasperify-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "frontend": "cd frontend && npx expo start",
+    "backend": "cd backend && uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
+    "test:backend": "cd backend && python -m pytest tests/ -v",
+    "docker:up": "docker-compose up --build",
+    "docker:down": "docker-compose down"
+  }
+}
