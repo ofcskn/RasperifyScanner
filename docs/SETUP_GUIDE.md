@@ -1,124 +1,175 @@
 # RasperifyScanner — Setup Guide
 
-## 1. Raspberry Pi 4 Model B — Initial Configuration
+> All `[PI]` commands must run inside an SSH session on the Pi.
+> `raspi-config`, `apt`, `libcamera-*`, `vcgencmd`, and `systemctl` are Pi OS tools — they do not exist on macOS or Windows.
 
-> **All commands in this section must be run on the Pi, not your Mac.**
-> SSH into the Pi first: `ssh pi@<pi-ip>` (or `ssh pi@192.168.7.2` via USB-C, `ssh pi@raspberrypi.local` via WiFi/Ethernet).
-> `raspi-config`, `apt`, `libcamera-*`, and `vcgencmd` are Raspberry Pi OS tools — they do not exist on macOS.
+---
 
-### Enable Camera (CSI)
+## 1. System Dependencies
+
 ```bash
-# Run on the Pi (after SSH):
-sudo raspi-config
-# Interface Options → Camera → Enable → Finish → Reboot
-```
-
-### Install system dependencies
-```bash
+# [PI]
 sudo apt update && sudo apt install -y \
-  python3.11 python3.11-venv python3.11-dev \
-  python3-picamera2 libcamera-apps
+  python3 python3-venv python3-dev \
+  python3-picamera2 libcamera-apps \
+  python3-psutil i2c-tools git curl
 ```
 
-### Verify camera
-```bash
-# Test live preview for 5 seconds
-libcamera-hello --timeout 5000
+---
 
-# Test still capture
+## 2. Camera (CSI)
+
+On Raspberry Pi OS Bookworm, the camera is auto-detected — no `raspi-config` step needed.
+
+```bash
+# [PI] Verify config.txt has this line (present by default after a fresh flash):
+grep camera_auto_detect /boot/firmware/config.txt
+# Expected: camera_auto_detect=1
+
+# Check detection:
+vcgencmd get_camera
+# Expected: supported=1 detected=1
+
+# Test capture:
 libcamera-jpeg -o /tmp/test.jpg && echo "Camera OK"
 
-# Test from Python (should print picamera2 version)
-python3 -c "from picamera2 import Picamera2; cam = Picamera2(); cam.start(); print('Camera service OK'); cam.stop()"
+# Test from Python:
+python3 -c "
+from picamera2 import Picamera2
+cam = Picamera2()
+cam.start()
+print('Camera service OK')
+cam.stop()
+"
 ```
 
-If `libcamera-hello` fails, check:
-- Ribbon cable is seated firmly in both the Pi CSI port and the camera module
-- `dtoverlay=dwc2` is not accidentally replacing the camera overlay in `/boot/firmware/config.txt`
-- Run `vcgencmd get_camera` — should show `supported=1 detected=1`
+**If `detected=0`:** Power off the Pi, reseat both ends of the ribbon cable (brown locking tabs pressed firmly flat), power on. Do NOT use `raspi-config` → Interface Options → Camera — that option no longer exists on Bookworm.
 
----
-
-## 2. USB-C OTG Gadget Mode (Pi connected to Mac via USB-C)
-
-This lets the Pi appear as a USB Ethernet device on the Mac.
-
-### On the Pi
-
-Edit `/boot/firmware/config.txt` and add at the end:
-```
-dtoverlay=dwc2
-```
-
-Edit `/boot/firmware/cmdline.txt` — add after `rootwait`:
-```
-modules-load=dwc2,g_ether
-```
-
-Assign a static IP to `usb0` — create `/etc/network/interfaces.d/usb0`:
-```
-auto usb0
-iface usb0 inet static
-    address 192.168.7.2
-    netmask 255.255.255.0
-```
-
-Reboot the Pi, then plug the USB-C cable into the Mac.
-
-### On the Mac
-
-1. System Settings → Network
-2. Find the new `RNDIS/ECM Gadget` or `USB 10/100 LAN` interface
-3. Set to Manual: IP `192.168.7.1`, Subnet `255.255.255.0`
-4. Test: `ping 192.168.7.2`
-
----
-
-## 3. WiFi Adapter
-
-The Pi connects to your LAN via `wlan0`. Find its IP with `hostname -I`.
-
----
-
-## 4. Ethernet Adapter
-
-Plug an Ethernet cable. The Pi gets a DHCP address on `eth0`. Find it with `hostname -I`.
-
----
-
-## 5. Backend Deployment on Pi
+**Diagnose with I2C** (to check if camera module is electrically present):
 
 ```bash
-git clone <repo> ~/RasperifyScanner
-cd ~/RasperifyScanner/backend
-python3.11 -m venv .venv && source .venv/bin/activate
+# [PI]
+i2cdetect -y 0   # or -y 1
+# IMX219 (v2 module) shows at address 0x10
+# IMX708 (v3 module) shows at address 0x1a
+# Empty grid = cable not seated or wrong bus
+```
+
+---
+
+## 3. USB-C Gadget Mode
+
+Uses the official `rpi-usb-gadget` package — handles all config.txt / cmdline.txt changes automatically.
+
+```bash
+# [PI] — plug USB-C data cable into Mac/PC before rebooting
+sudo apt install rpi-usb-gadget
+sudo rpi-usb-gadget on
+sudo reboot
+```
+
+**Pi is reachable at `10.12.194.1`** (SHARED mode, no ICS required):
+
+```bash
+ssh pi@10.12.194.1
+curl http://10.12.194.1:8000/api/v1/health
+```
+
+| Mode | Pi IP | When |
+|---|---|---|
+| SHARED | `10.12.194.1` (fixed) | No ICS on host |
+| CLIENT (macOS ICS) | `192.168.2.x` | Internet Sharing enabled on Mac |
+| CLIENT (Windows ICS) | `192.168.137.x` | ICS enabled on Windows |
+| CLIENT (Linux ICS) | `10.42.0.x` | NetworkManager shared mode |
+
+> Cable warning: power-only USB-C cables are physically identical to data cables. If the interface never appears, swap the cable first.
+
+---
+
+## 4. Backend Deployment
+
+```bash
+# [PI]
+cd ~
+git clone <repo> RasperifyScanner
+cd RasperifyScanner/backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env: set GEMINI_API_KEY, OPENAI_API_KEY, SECRET_KEY
+nano .env   # set GEMINI_API_KEY, SECRET_KEY, CAMERA_MOCK=false
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Access at:
-- USB-C: `http://192.168.7.2:8000/docs`
-- WiFi/Ethernet: `http://<pi-ip>:8000/docs`
+Health check from Mac:
+
+```bash
+curl http://10.12.194.1:8000/api/v1/health | python3 -m json.tool
+```
 
 ---
 
-## 6. GitHub Repository Setup
+## 5. Auto-Start on Boot (systemd)
 
 ```bash
-# Push to your GitHub remote
-git remote add origin https://github.com/<your-username>/RasperifyScanner.git
-git push -u origin main
+# [PI]
+sudo tee /etc/systemd/system/rasperify.service <<EOF
+[Unit]
+Description=RasperifyScanner Backend
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/RasperifyScanner/backend
+ExecStart=/home/pi/RasperifyScanner/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable rasperify
+sudo systemctl start rasperify
+sudo systemctl status rasperify
 ```
 
-**Branch protection rules** (GitHub → Settings → Branches → Add rule for `main`):
-- Require a pull request before merging
-- Require status checks to pass (CI workflow: `test`, `lint`)
-- Do not allow bypassing the above settings
-- Restrict force pushes
+Logs: `sudo journalctl -u rasperify -f`
 
-The CI workflow at `.github/workflows/ci.yml` runs on every PR and push to `main`:
-- `pytest` unit and integration tests
-- `flake8` / `pylint` linting
-- Docker image build verification (ARM64)
+---
+
+## 6. WiFi / Ethernet
+
+WiFi credentials must be set in **Raspberry Pi Imager** Advanced Options before flashing — it's the most reliable method.
+
+To change credentials after boot:
+
+```bash
+# [PI]
+sudo raspi-config
+# System Options → Wireless LAN → enter SSID and password
+```
+
+Find the Pi's IP:
+
+```bash
+# [MAC/WIN/LINUX]
+ping raspberrypi.local
+nmap -sn 192.168.1.0/24 | grep -B2 -i raspberry
+```
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `detected=0` from `vcgencmd get_camera` | Power off, reseat ribbon cable on both ends |
+| `active_adapter: null` in health JSON | USB-C not configured — run Steps 3 above |
+| `ModuleNotFoundError: picamera2` | `sudo apt install python3-picamera2` |
+| `Address already in use` on port 8000 | `sudo fuser -k 8000/tcp` |
+| USB Ethernet not appearing on Mac | Swap to a data-capable USB-C cable; disable VPN |
+| `cpu_percent: null` in health JSON | `sudo apt install python3-psutil` |
