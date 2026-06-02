@@ -1,13 +1,10 @@
-version: "3.9"
-
 services:
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     platform: linux/arm64
-    ports:
-      - "8000:8000"
+    network_mode: host
     volumes:
       - ./backend:/app
       - ./config:/config
