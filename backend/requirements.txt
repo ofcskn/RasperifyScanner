@@ -7,7 +7,7 @@ aiosqlite==0.20.0
 google-genai==2.7.0
 openai==1.109.1
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+passlib[argon2]==1.7.4
 APScheduler==3.10.4
 python-multipart==0.0.9
 websockets==16.0

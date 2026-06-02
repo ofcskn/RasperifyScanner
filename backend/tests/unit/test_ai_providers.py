@@ -29,6 +29,7 @@ async def test_openai_provider_parse():
 async def test_multi_provider_falls_back_to_openai():
     fake_result = AnalysisResult(provider="openai", raw_response="{}", detections=[], metrics={})
     service = MultiAIProviderService.__new__(MultiAIProviderService)
+    service._cache = {}
     gemini_mock = AsyncMock(side_effect=RuntimeError("Gemini down"))
     openai_mock = AsyncMock(return_value=fake_result)
     service._providers = {"gemini": MagicMock(analyze=gemini_mock, name="gemini"),

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.config.settings import settings
 from app.models.orm import User
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 class AuthService:

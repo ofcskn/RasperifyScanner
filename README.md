@@ -71,6 +71,7 @@ docker-compose up --build
 ### Tests
 
 ```bash
+# activate the virtual environment
 cd backend
 pytest tests/ -v
 ```
