@@ -97,3 +97,24 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 Access at:
 - USB-C: `http://192.168.7.2:8000/docs`
 - WiFi/Ethernet: `http://<pi-ip>:8000/docs`
+
+---
+
+## 6. GitHub Repository Setup
+
+```bash
+# Push to your GitHub remote
+git remote add origin https://github.com/<your-username>/RasperifyScanner.git
+git push -u origin main
+```
+
+**Branch protection rules** (GitHub → Settings → Branches → Add rule for `main`):
+- Require a pull request before merging
+- Require status checks to pass (CI workflow: `test`, `lint`)
+- Do not allow bypassing the above settings
+- Restrict force pushes
+
+The CI workflow at `.github/workflows/ci.yml` runs on every PR and push to `main`:
+- `pytest` unit and integration tests
+- `flake8` / `pylint` linting
+- Docker image build verification (ARM64)

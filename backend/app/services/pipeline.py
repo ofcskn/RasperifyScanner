@@ -8,9 +8,6 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import AsyncSessionLocal
 from app.models.orm import Analysis, DetectionResult, IntensityMetric
@@ -61,7 +58,6 @@ class AnalysisPipelineController:
             return {"event": "no_motion", "frame_id": frame_id, "motion_detected": False}
 
         result = await multi_ai_service.analyze(frame_base64, prompt)
-        motion_detected = True
 
         async with AsyncSessionLocal() as db:
             analysis = Analysis(

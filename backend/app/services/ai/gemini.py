@@ -3,7 +3,8 @@ import base64
 import json
 import re
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.config.settings import settings
 from app.services.ai.base import AIProvider, AnalysisResult, DetectedObject
@@ -15,21 +16,27 @@ _DEFAULT_PROMPT = (
     "Return ONLY valid JSON."
 )
 
+_MODEL = "gemini-1.5-flash"
+
 
 class GeminiProvider(AIProvider):
     def __init__(self) -> None:
-        genai.configure(api_key=settings.gemini_api_key)
-        self._model = genai.GenerativeModel("gemini-1.5-flash")
+        self._client = genai.Client(api_key=settings.gemini_api_key)
 
     @property
     def name(self) -> str:
         return "gemini"
 
     async def analyze(self, frame_base64: str, prompt: str | None = None) -> AnalysisResult:
-        image_data = {"mime_type": "image/jpeg", "data": frame_base64}
-        response = self._model.generate_content([prompt or _DEFAULT_PROMPT, image_data])
-        raw = response.text
-        return self._parse(raw)
+        image_part = types.Part.from_bytes(
+            data=base64.b64decode(frame_base64),
+            mime_type="image/jpeg",
+        )
+        response = await self._client.aio.models.generate_content(
+            model=_MODEL,
+            contents=[prompt or _DEFAULT_PROMPT, image_part],
+        )
+        return self._parse(response.text)
 
     def _parse(self, raw: str) -> AnalysisResult:
         try:
