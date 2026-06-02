@@ -13,7 +13,7 @@ Every command is labelled:
 - **[WIN]** — run on a Windows PC
 - **[LINUX]** — run on a Linux desktop/laptop
 
-**Never run a [PI] command on your host machine.** Tools like `raspi-config`, `libcamera-hello`, `vcgencmd`, `hostnamectl`, `apt`, and `systemctl` are Raspberry Pi OS / Linux tools. They do not exist on macOS or Windows and will print `command not found`.
+**Never run a [PI] command on your host machine.** Tools like `raspi-config`, `rpicam-hello`, `vcgencmd`, `hostnamectl`, `apt`, and `systemctl` are Raspberry Pi OS / Linux tools. They do not exist on macOS or Windows and will print `command not found`.
 
 If you are unsure which machine your terminal is connected to:
 
@@ -364,7 +364,7 @@ sudo apt install -y \
   python3.11-venv \
   python3.11-dev \
   python3-picamera2 \
-  libcamera-apps \
+  rpicam-apps \
   python3-psutil \
   git \
   curl
@@ -404,25 +404,24 @@ Wait until the green activity LED stops flashing, then unplug the USB-C power ca
 
 ### Enable the camera interface
 
+On Raspberry Pi OS Bookworm, the camera is auto-detected via `camera_auto_detect=1` in `/boot/firmware/config.txt` — no `raspi-config` step is needed.
+
 ```bash
-# [PI]
-sudo raspi-config
+# [PI] Confirm the line is present (it is by default after a fresh flash):
+grep camera_auto_detect /boot/firmware/config.txt
+# Expected: camera_auto_detect=1
 ```
-
-Navigate: **Interface Options → Camera → Yes → Finish → Reboot**
-
-Reconnect via SSH after the reboot.
 
 ### Verify the camera
 
 ```bash
 # [PI]
-vcgencmd get_camera
-# Expected: supported=1 detected=1, libcamera interfaces=1
+rpicam-hello --list-cameras
+# Expected: lists at least one camera (e.g. ov5647)
 
-libcamera-hello --timeout 5000
+rpicam-hello --timeout 5000
 
-libcamera-jpeg -o /tmp/test.jpg && echo "Camera OK"
+rpicam-jpeg -o /tmp/test.jpg && echo "Camera OK"
 
 python3 -c "
 from picamera2 import Picamera2
@@ -433,7 +432,7 @@ cam.stop()
 "
 ```
 
-**If `detected=0`:** Power off, reseat both ribbon cable ends (press locking tabs firmly closed), power on.
+**If no camera is listed:** Power off, reseat both ribbon cable ends (press locking tabs firmly closed), power on.
 
 ---
 
@@ -893,7 +892,7 @@ arp -n
 | `hostnamectl` | [PI] only | SSH into the Pi first |
 | `raspi-config` | [PI] only | SSH into the Pi first |
 | `apt` / `apt-get` | [PI] only | SSH into the Pi first |
-| `libcamera-hello` | [PI] only | SSH into the Pi first |
+| `rpicam-hello` | [PI] only | SSH into the Pi first |
 | `vcgencmd` | [PI] only | SSH into the Pi first |
 | `rpi-usb-gadget` | [PI] only | SSH into the Pi first |
 | `nmap` | [MAC] not pre-installed | `brew install nmap` |
@@ -905,16 +904,16 @@ arp -n
 
 ```bash
 # [PI]
-vcgencmd get_camera
-# Must show: supported=1 detected=1
+rpicam-hello --list-cameras
+# Expected: lists at least one camera
 
-libcamera-hello --timeout 3000
+rpicam-hello --timeout 3000
 ```
 
 **Fixes:**
 - Power off, reseat both ribbon cable ends, press tabs firmly, power on.
-- `sudo raspi-config` → Interface Options → Camera → Enable → Reboot.
-- Confirm `/boot/firmware/config.txt` contains `camera_auto_detect=1`.
+- Confirm `/boot/firmware/config.txt` contains `camera_auto_detect=1` (present by default on Bookworm).
+- Do NOT use `raspi-config` → Interface Options → Camera — that option was removed on Bookworm.
 
 ---
 

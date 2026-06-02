@@ -143,11 +143,11 @@ grep camera_auto_detect /boot/firmware/config.txt
 # Expected: camera_auto_detect=1
 
 # Check detection:
-vcgencmd get_camera
-# Expected: supported=1 detected=1
+rpicam-hello --list-cameras
+# Expected: lists at least one camera
 
 # Test capture:
-libcamera-jpeg -o /tmp/test.jpg && echo "Camera OK"
+rpicam-jpeg -o /tmp/test.jpg && echo "Camera OK"
 ```
 
 If `detected=0`: power off the Pi, reseat both ends of the ribbon cable (brown locking tabs must be pressed firmly flat), power on.

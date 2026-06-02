@@ -1,7 +1,7 @@
 # RasperifyScanner — Setup Guide
 
 > All `[PI]` commands must run inside an SSH session on the Pi.
-> `raspi-config`, `apt`, `libcamera-*`, `vcgencmd`, and `systemctl` are Pi OS tools — they do not exist on macOS or Windows.
+> `raspi-config`, `apt`, `rpicam-*`, `vcgencmd`, and `systemctl` are Pi OS tools — they do not exist on macOS or Windows.
 
 ---
 
@@ -11,7 +11,7 @@
 # [PI]
 sudo apt update && sudo apt install -y \
   python3 python3-venv python3-dev \
-  python3-picamera2 libcamera-apps \
+  python3-picamera2 rpicam-apps \
   python3-psutil i2c-tools git curl
 ```
 
@@ -27,11 +27,11 @@ grep camera_auto_detect /boot/firmware/config.txt
 # Expected: camera_auto_detect=1
 
 # Check detection:
-vcgencmd get_camera
-# Expected: supported=1 detected=1
+rpicam-hello --list-cameras
+# Expected: lists at least one camera
 
 # Test capture:
-libcamera-jpeg -o /tmp/test.jpg && echo "Camera OK"
+rpicam-jpeg -o /tmp/test.jpg && echo "Camera OK"
 
 # Test from Python:
 python3 -c "
@@ -43,7 +43,7 @@ cam.stop()
 "
 ```
 
-**If `detected=0`:** Power off the Pi, reseat both ends of the ribbon cable (brown locking tabs pressed firmly flat), power on. Do NOT use `raspi-config` → Interface Options → Camera — that option no longer exists on Bookworm.
+**If no camera is listed:** Power off the Pi, reseat both ends of the ribbon cable (brown locking tabs pressed firmly flat), power on. Do NOT use `raspi-config` → Interface Options → Camera — that option no longer exists on Bookworm.
 
 **Diagnose with I2C** (to check if camera module is electrically present):
 
@@ -167,7 +167,7 @@ nmap -sn 192.168.1.0/24 | grep -B2 -i raspberry
 
 | Symptom | Fix |
 |---|---|
-| `detected=0` from `vcgencmd get_camera` | Power off, reseat ribbon cable on both ends |
+| No camera listed by `rpicam-hello --list-cameras` | Power off, reseat ribbon cable on both ends |
 | `active_adapter: null` in health JSON | USB-C not configured — run Steps 3 above |
 | `ModuleNotFoundError: picamera2` | `sudo apt install python3-picamera2` |
 | `Address already in use` on port 8000 | `sudo fuser -k 8000/tcp` |
