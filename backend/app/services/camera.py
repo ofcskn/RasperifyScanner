@@ -30,6 +30,7 @@ class CameraService:
         self._camera = None
         self._mock = settings.camera_mock or not self._try_import_picamera()
         self._jpeg_quality: int = settings.camera_jpeg_quality
+        self._capture_ok: bool = False
 
     def set_quality(self, quality: int) -> None:
         self._jpeg_quality = max(10, min(95, quality))
@@ -78,17 +79,25 @@ class CameraService:
 
     def _run(self) -> None:
         if not self._mock:
-            self._camera = self._open_camera()
+            try:
+                self._camera = self._open_camera()
+                self._capture_ok = True
+            except Exception as exc:
+                logger.error("Camera open failed: %s", exc)
+                self._capture_ok = False
+                return
         logger.info("CameraService started (mock=%s)", self._mock)
         while self._running:
             try:
                 frame = self._capture_one()
+                self._capture_ok = True
                 try:
                     self._queue.put_nowait(frame)
                 except queue.Full:
                     self._queue.get_nowait()
                     self._queue.put_nowait(frame)
             except Exception as exc:
+                self._capture_ok = False
                 logger.error("Frame capture error: %s", exc)
 
     def start(self) -> None:
@@ -117,7 +126,9 @@ class CameraService:
 
     @property
     def is_connected(self) -> bool:
-        return self._mock or self._camera is not None
+        if self._mock:
+            return True
+        return self._capture_ok
 
 
 camera_service = CameraService()
