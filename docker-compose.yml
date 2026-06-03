@@ -5,13 +5,19 @@ services:
       dockerfile: Dockerfile
     platform: linux/arm64
     network_mode: host
+    # Grant access to all Pi camera devices (video group + /dev/video*, /dev/media*)
+    privileged: true
+    devices:
+      - /dev/video0:/dev/video0
+    group_add:
+      - video
     volumes:
       - ./backend:/app
       - ./config:/config
     environment:
       - NETWORK_CONFIG_PATH=/config/network.yml
       - DATABASE_URL=sqlite+aiosqlite:///./rasperify.db
-      - CAMERA_MOCK=true
+      # CAMERA_MOCK intentionally omitted — value comes from ./backend/.env
     env_file:
       - ./backend/.env
     restart: unless-stopped

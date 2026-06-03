@@ -35,9 +35,22 @@ class CameraService:
         self._running = False
         self._thread: threading.Thread | None = None
         self._camera = None
-        self._mock = settings.camera_mock or not self._try_import_picamera()
         self._jpeg_quality: int = settings.camera_jpeg_quality
         self._capture_ok: bool = False
+
+        picamera_available = self._try_import_picamera()
+        if settings.camera_mock:
+            self._mock = True
+            logger.info("CameraService: mock mode enabled via CAMERA_MOCK setting")
+        elif not picamera_available:
+            self._mock = True
+            logger.warning(
+                "CameraService: picamera2 not importable — falling back to mock mode. "
+                "Install picamera2 (pip install picamera2) and ensure libcamera bindings "
+                "are available (python3-libcamera apt package + PYTHONPATH)."
+            )
+        else:
+            self._mock = False
 
     def set_quality(self, quality: int) -> None:
         self._jpeg_quality = max(10, min(95, quality))
