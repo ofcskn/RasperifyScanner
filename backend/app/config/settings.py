@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # Default admin user seeded on first run (leave blank to skip seeding)
+    default_username: str = ""
+    default_password: str = ""
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./rasperify.db"
 
