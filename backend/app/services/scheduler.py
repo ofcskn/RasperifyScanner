@@ -1,6 +1,6 @@
 """SchedulerService — Pure Fabrication (GRASP): wraps APScheduler with domain schedule management."""
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,12 +35,13 @@ class SchedulerService:
             from sqlalchemy import select
             result = await db.execute(select(Schedule).where(Schedule.enabled == True))
             for sched in result.scalars().all():
-                self._add_job(sched)
+                self._add_job(sched, delay_first_run=True)
 
-    def _add_job(self, sched: Schedule) -> None:
+    def _add_job(self, sched: Schedule, delay_first_run: bool = False) -> None:
         job_id = f"schedule_{sched.id}"
         if self._scheduler.get_job(job_id):
             return
+        start = datetime.now(timezone.utc) + timedelta(seconds=sched.interval_seconds) if delay_first_run else None
         self._scheduler.add_job(
             self._run_job,
             "interval",
@@ -48,6 +49,7 @@ class SchedulerService:
             id=job_id,
             args=[sched.id],
             replace_existing=True,
+            next_run_time=start,
         )
 
     async def _run_job(self, schedule_id: int) -> None:

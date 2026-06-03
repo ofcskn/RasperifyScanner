@@ -209,15 +209,15 @@ export default function DashboardScreen() {
           </>
         ) : (
           <Text style={styles.empty}>
-            Waiting for environment scan…{'\n'}Scans run automatically every 5 minutes.
+            Waiting for environment scan…{'\n'}Use "Run Scan Now" or configure a schedule in Settings.
           </Text>
         )}
       </View>
 
-      {/* Auto-scan info strip */}
+      {/* Last scan info strip */}
       <View style={styles.infoStrip}>
         <Text style={styles.infoText}>
-          Auto-scan every 5 min · Last: {timeAgo(lastScanTime)}
+          Last scan: {timeAgo(lastScanTime)}
         </Text>
       </View>
     </ScrollView>

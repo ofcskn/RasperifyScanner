@@ -34,6 +34,11 @@ class MultiAIProviderService:
             return entry[1]
         return None
 
+    @staticmethod
+    def _is_rate_limited(exc: Exception) -> bool:
+        msg = str(exc)
+        return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "RateLimitError" in type(exc).__name__
+
     async def analyze(self, frame_base64: str, prompt: str | None = None) -> AnalysisResult:
         key = self._cache_key(frame_base64, prompt)
         cached = self._get_cached(key)
@@ -49,11 +54,15 @@ class MultiAIProviderService:
                     self._cache[key] = (time.monotonic(), result)
                     return result
                 except Exception as exc:
+                    if self._is_rate_limited(exc):
+                        logger.warning("Provider %s rate-limited (429), skipping to fallback", provider_name)
+                        break
                     wait = settings.ai_retry_backoff_base ** attempt
                     logger.warning("Provider %s attempt %d failed: %s — retrying in %.1fs", provider_name, attempt + 1, exc, wait)
                     if attempt < settings.ai_retry_max - 1:
                         await asyncio.sleep(wait)
-            logger.error("Provider %s exhausted retries, switching to fallback", provider_name)
+            else:
+                logger.error("Provider %s exhausted retries, switching to fallback", provider_name)
         raise RuntimeError("All AI providers exhausted")
 
 
