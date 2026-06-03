@@ -7,7 +7,7 @@ import { wsService } from '../../services/websocket';
 import { fetchHealth, triggerAnalysis, connectCamera, disconnectCamera, EnvironmentScan } from '../../services/api';
 
 interface AnalysisEvent {
-  event: string;
+  event: 'analysis_complete';
   id: number;
   frame_id: string;
   provider: string;
@@ -15,6 +15,12 @@ interface AnalysisEvent {
   detections: Array<{ object_name: string; confidence: number }>;
   metrics: Record<string, number>;
   environment_scan: EnvironmentScan | null;
+}
+
+interface LiveFrameEvent {
+  event: 'live_frame';
+  frame_id: string;
+  frame_thumbnail: string;
 }
 
 interface HealthData {
@@ -47,6 +53,7 @@ function timeAgo(iso: string | null): string {
 
 export default function DashboardScreen() {
   const [latest, setLatest] = useState<AnalysisEvent | null>(null);
+  const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthData | null>(null);
   const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -57,10 +64,12 @@ export default function DashboardScreen() {
     wsService.connect();
     setConnected(true);
     const unsub = wsService.subscribe((data) => {
-      const event = data as AnalysisEvent;
-      if (event.event === 'analysis_complete') {
-        setLatest(event);
+      const ev = data as { event: string };
+      if (ev.event === 'analysis_complete') {
+        setLatest(data as AnalysisEvent);
         setLastScanTime(new Date().toISOString());
+      } else if (ev.event === 'live_frame') {
+        setLiveFrame((data as LiveFrameEvent).frame_thumbnail);
       }
     });
     return () => {
@@ -100,6 +109,7 @@ export default function DashboardScreen() {
     try {
       if (health?.camera_connected) {
         await disconnectCamera();
+        setLiveFrame(null);
       } else {
         await connectCamera();
       }
@@ -115,6 +125,8 @@ export default function DashboardScreen() {
   const env = latest?.environment_scan ?? null;
   const envIcon = env ? (ENV_ICONS[env.environment_type] ?? '📷') : null;
   const densityColor = env ? (DENSITY_COLORS[env.crowd_density] ?? '#6b7280') : '#6b7280';
+  const displayFrame = liveFrame ?? latest?.frame_thumbnail ?? null;
+  const isShowingLive = !!liveFrame;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -199,12 +211,20 @@ export default function DashboardScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Current Environment</Text>
 
-        {latest?.frame_thumbnail ? (
-          <Image
-            source={{ uri: `data:image/jpeg;base64,${latest.frame_thumbnail}` }}
-            style={styles.frameImage}
-            resizeMode="cover"
-          />
+        {displayFrame ? (
+          <View style={styles.frameContainer}>
+            <Image
+              source={{ uri: `data:image/jpeg;base64,${displayFrame}` }}
+              style={styles.frameImage}
+              resizeMode="cover"
+            />
+            {isShowingLive && (
+              <View style={styles.liveBadge}>
+                <View style={styles.liveBadgeDot} />
+                <Text style={styles.liveBadgeText}>LIVE</Text>
+              </View>
+            )}
+          </View>
         ) : (
           <View style={styles.framePlaceholder}>
             <Text style={styles.framePlaceholderText}>No frame captured yet</Text>
@@ -298,9 +318,13 @@ const styles = StyleSheet.create({
   scanBtnDisabled: { backgroundColor: '#93c5fd' },
   scanBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-  frameImage: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#0f172a' },
+  frameContainer: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#0f172a', overflow: 'hidden' },
+  frameImage: { width: '100%', height: '100%' },
   framePlaceholder: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' },
   framePlaceholderText: { color: '#475569', fontSize: 13 },
+  liveBadge: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#dc2626', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 5 },
+  liveBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
+  liveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
   envHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   envIcon: { fontSize: 32, marginRight: 12 },

@@ -30,6 +30,7 @@ def _to_response(analysis: Analysis) -> AnalysisResponse:
         provider=analysis.provider,
         raw_response=analysis.raw_response,
         environment_scan=env,
+        frame_thumbnail=analysis.frame_thumbnail,
         created_at=analysis.created_at,
         detections=[
             DetectionItem(

@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import logging
 from contextlib import asynccontextmanager
 
@@ -7,9 +9,12 @@ from sqlalchemy import select
 
 from app.models.database import init_db, AsyncSessionLocal
 from app.models.orm import Schedule
+from app.services.camera import camera_service
+from app.services.connection import connection_service
 from app.services.scheduler import scheduler_service
 from app.services.pipeline import scheduled_pipeline_trigger
 from app.services.scheduler import set_pipeline_trigger
+from app.utils.image import resize_and_encode
 
 from app.api.routes import auth, analyze, results, schedules, health, camera
 from app.api import websocket
@@ -18,6 +23,32 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_SCHEDULE_NAME = "Environment Scan"
 _DEFAULT_SCHEDULE_INTERVAL = 300  # 5 minutes
+_LIVE_FRAME_INTERVAL = 1.0  # seconds between live frame broadcasts
+_LIVE_THUMB_WIDTH = 480
+_LIVE_THUMB_HEIGHT = 270
+_LIVE_THUMB_QUALITY = 60
+
+
+async def _live_frame_broadcaster() -> None:
+    """Broadcast live camera frames to connected WebSocket clients when camera is active."""
+    while True:
+        try:
+            if camera_service._running and connection_service.connection_count > 0:
+                frame = camera_service.capture_now()
+                thumb = resize_and_encode(
+                    base64.b64decode(frame.frame_base64),
+                    width=_LIVE_THUMB_WIDTH,
+                    height=_LIVE_THUMB_HEIGHT,
+                    quality=_LIVE_THUMB_QUALITY,
+                )
+                await connection_service.broadcast({
+                    "event": "live_frame",
+                    "frame_id": frame.frame_id,
+                    "frame_thumbnail": thumb,
+                })
+        except Exception as exc:
+            logger.warning("Live frame broadcast error: %s", exc)
+        await asyncio.sleep(_LIVE_FRAME_INTERVAL)
 
 
 async def _seed_default_schedule() -> None:
@@ -44,8 +75,14 @@ async def lifespan(app: FastAPI):
     scheduler_service.start()
     await scheduler_service.load_persisted_schedules()
     await _seed_default_schedule()
+    live_task = asyncio.create_task(_live_frame_broadcaster())
     yield
     scheduler_service.stop()
+    live_task.cancel()
+    try:
+        await live_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(

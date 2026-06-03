@@ -28,8 +28,15 @@ export default function HistoryScreen() {
       }
       setTotal(data.total);
       setPage(p);
-    } catch {
-      setError('Failed to load results. Is the Pi connected?');
+    } catch (err) {
+      const status = (err as any)?.response?.status;
+      if (status === 401) {
+        setError('Session expired. Please log in again.');
+      } else if (status) {
+        setError(`Failed to load results (error ${status}).`);
+      } else {
+        setError('Cannot reach the server. Is the Pi connected?');
+      }
     } finally {
       setLoading(false);
     }
@@ -183,7 +190,12 @@ export default function HistoryScreen() {
       )}
 
       {error ? (
-        <Text style={styles.error}>{error}</Text>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => load(1, applied)}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           data={items}
@@ -191,6 +203,11 @@ export default function HistoryScreen() {
           renderItem={renderItem}
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
+          ListEmptyComponent={
+            !loading ? (
+              <Text style={styles.emptyText}>No results yet. Run a scan to get started.</Text>
+            ) : null
+          }
           ListFooterComponent={loading ? <ActivityIndicator style={{ margin: 16 }} color="#2563eb" /> : null}
           contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
         />
@@ -214,7 +231,11 @@ const styles = StyleSheet.create({
   clearText: { color: '#6b7280', fontWeight: '600' },
   applyBtn: { backgroundColor: '#2563eb', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   applyText: { color: '#fff', fontWeight: '600' },
-  error: { color: '#dc2626', textAlign: 'center', margin: 32 },
+  errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  errorText: { color: '#dc2626', textAlign: 'center', fontSize: 14, marginBottom: 16 },
+  retryBtn: { backgroundColor: '#2563eb', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  retryText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  emptyText: { textAlign: 'center', color: '#9ca3af', marginTop: 60, fontSize: 14, paddingHorizontal: 32 },
 
   card: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3, overflow: 'hidden' },
   thumbnail: { width: '100%', height: 160, backgroundColor: '#0f172a' },
