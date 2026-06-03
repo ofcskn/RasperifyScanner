@@ -10,7 +10,7 @@ from app.config.settings import settings
 from app.services.ai.base import AIProvider, AnalysisResult, DetectedObject, EnvironmentScan
 from app.services.ai.prompts import ENVIRONMENT_SCAN_PROMPT
 
-_MODEL = "gemini-1.5-flash"
+_MODEL = "gemini-2.0-flash"
 
 
 class GeminiProvider(AIProvider):

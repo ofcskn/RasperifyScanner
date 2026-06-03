@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.config.settings import settings
 
 
@@ -12,9 +12,18 @@ engine = create_async_engine(settings.database_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
+async def _migrate(conn) -> None:
+    """Add columns that were introduced after the initial schema was created."""
+    result = await conn.execute(text("PRAGMA table_info(analyses)"))
+    existing_cols = {row[1] for row in result.fetchall()}
+    if "environment_json" not in existing_cols:
+        await conn.execute(text("ALTER TABLE analyses ADD COLUMN environment_json JSON"))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _migrate(conn)
 
     if settings.default_username and settings.default_password:
         from app.models.orm import User
