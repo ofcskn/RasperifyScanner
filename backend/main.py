@@ -39,7 +39,9 @@ async def _live_frame_broadcaster() -> None:
     loop = asyncio.get_running_loop()
     while True:
         try:
-            if camera_service._running and connection_service.connection_count > 0:
+            running = camera_service._running
+            clients = connection_service.connection_count
+            if running and clients > 0:
                 frame = camera_service.get_latest_frame()
                 if frame is not None:
                     raw = base64.b64decode(frame.frame_base64)
@@ -54,6 +56,11 @@ async def _live_frame_broadcaster() -> None:
                         "frame_id": frame.frame_id,
                         "frame_thumbnail": thumb,
                     })
+                    logger.debug("live_frame broadcast: frame_id=%s clients=%d", frame.frame_id, clients)
+                else:
+                    logger.debug("live_frame: camera running but queue empty (camera still warming up?)")
+            elif running and clients == 0:
+                logger.debug("live_frame: camera running but no WS clients connected")
         except Exception as exc:
             logger.warning("Live frame broadcast error: %s", exc)
         await asyncio.sleep(_LIVE_FRAME_INTERVAL)
