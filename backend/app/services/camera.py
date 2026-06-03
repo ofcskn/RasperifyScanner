@@ -184,9 +184,13 @@ class CameraService:
 
     @property
     def is_connected(self) -> bool:
-        if self._mock:
-            return True
-        return self._capture_ok
+        # _running must be True (start() was called) in all modes.
+        # Without this, mock mode always returned True even before the
+        # capture thread was started, making the UI show "Disconnect Camera"
+        # on first load and preventing any frames from ever being broadcast.
+        if not self._running:
+            return False
+        return self._mock or self._capture_ok
 
 
 camera_service = CameraService()
