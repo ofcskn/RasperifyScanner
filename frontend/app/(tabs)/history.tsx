@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
   TouchableOpacity, TextInput,
 } from 'react-native';
-import { fetchResults, AnalysisResult, ResultFilters } from '../../services/api';
+import { fetchResults, AnalysisResult, ResultFilters, EnvironmentScan } from '../../services/api';
 
 export default function HistoryScreen() {
   const [items, setItems] = useState<AnalysisResult[]>([]);
@@ -54,27 +54,50 @@ export default function HistoryScreen() {
 
   const hasFilters = Object.values(applied).some(Boolean);
 
-  const renderItem = ({ item }: { item: AnalysisResult }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.provider}>{item.provider.toUpperCase()}</Text>
-        <Text style={styles.timestamp}>{new Date(item.created_at).toLocaleString()}</Text>
-      </View>
-      <Text style={styles.frameId}>Frame: {item.frame_id.slice(0, 12)}…</Text>
-      <Text style={styles.detectionCount}>
-        {item.detections.length} detection{item.detections.length !== 1 ? 's' : ''}
-      </Text>
-      {item.detections.slice(0, 3).map((d, i) => (
-        <View key={i} style={styles.detectionRow}>
-          <Text style={styles.objName}>{d.object_name}</Text>
-          <Text style={styles.conf}>{(d.confidence * 100).toFixed(0)}%</Text>
+  const ENV_ICONS: Record<string, string> = {
+    train: '🚆', bus: '🚌', subway: '🚇', tram: '🚊',
+    club: '🎶', bar: '🍺', restaurant: '🍽️', cafe: '☕',
+    park: '🌳', street: '🏙️', office: '🏢', shop: '🛍️',
+    stadium: '🏟️', waiting_room: '🪑', unknown: '📷',
+  };
+
+  const renderItem = ({ item }: { item: AnalysisResult }) => {
+    const env: EnvironmentScan | null = item.environment_scan ?? null;
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.provider}>{item.provider.toUpperCase()}</Text>
+          <Text style={styles.timestamp}>{new Date(item.created_at).toLocaleString()}</Text>
         </View>
-      ))}
-      {item.detections.length > 3 && (
-        <Text style={styles.more}>+{item.detections.length - 3} more</Text>
-      )}
-    </View>
-  );
+
+        {env ? (
+          <View style={styles.envRow}>
+            <Text style={styles.envIcon}>{ENV_ICONS[env.environment_type] ?? '📷'}</Text>
+            <Text style={styles.envType}>{env.environment_type.replace('_', ' ')}</Text>
+            <Text style={styles.dot}>·</Text>
+            <Text style={styles.peopleCount}>👥 {env.people_count}</Text>
+            <Text style={styles.dot}>·</Text>
+            <Text style={styles.density}>{env.crowd_density}</Text>
+          </View>
+        ) : (
+          <Text style={styles.frameId}>Frame: {item.frame_id.slice(0, 12)}…</Text>
+        )}
+
+        <Text style={styles.detectionCount}>
+          {item.detections.length} detection{item.detections.length !== 1 ? 's' : ''}
+        </Text>
+        {item.detections.slice(0, 3).map((d, i) => (
+          <View key={i} style={styles.detectionRow}>
+            <Text style={styles.objName}>{d.object_name}</Text>
+            <Text style={styles.conf}>{(d.confidence * 100).toFixed(0)}%</Text>
+          </View>
+        ))}
+        {item.detections.length > 3 && (
+          <Text style={styles.more}>+{item.detections.length - 3} more</Text>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -116,6 +139,12 @@ export default function HistoryScreen() {
             value={draft.minConfidence != null ? String(draft.minConfidence) : ''}
             onChangeText={(v) => setDraft((d) => ({ ...d, minConfidence: v ? parseFloat(v) : undefined }))}
             keyboardType="numeric"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Environment type (e.g. train, bus, club)"
+            value={draft.environmentType ?? ''}
+            onChangeText={(v) => setDraft((d) => ({ ...d, environmentType: v || undefined }))}
           />
           <View style={styles.filterActions}>
             <TouchableOpacity style={styles.clearBtn} onPress={clearFilters}>
@@ -171,4 +200,10 @@ const styles = StyleSheet.create({
   objName: { fontSize: 13, color: '#111827' },
   conf: { fontSize: 13, fontWeight: '500', color: '#059669' },
   more: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  envRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 4, gap: 4 },
+  envIcon: { fontSize: 14 },
+  envType: { fontSize: 13, fontWeight: '600', color: '#1e3a5f', textTransform: 'capitalize' },
+  dot: { fontSize: 13, color: '#d1d5db' },
+  peopleCount: { fontSize: 13, color: '#374151' },
+  density: { fontSize: 12, color: '#6b7280', textTransform: 'capitalize' },
 });

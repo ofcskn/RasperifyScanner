@@ -60,12 +60,21 @@ export async function login(username: string, password: string): Promise<LoginRe
   return data;
 }
 
+export interface EnvironmentScan {
+  people_count: number;
+  environment_type: string;
+  crowd_density: string;
+  ambient_conditions: { lighting: string; estimated_time: string };
+  notable_observations: string[];
+}
+
 export interface AnalysisResult {
   id: number;
   frame_id: string;
   provider: string;
   detections: Array<{ object_name: string; confidence: number; bbox: object | null }>;
   metrics: Array<{ metric_name: string; value: number }>;
+  environment_scan: EnvironmentScan | null;
   created_at: string;
 }
 
@@ -74,6 +83,7 @@ export interface ResultFilters {
   dateTo?: string;
   objectName?: string;
   minConfidence?: number;
+  environmentType?: string;
 }
 
 export async function fetchResults(page = 1, pageSize = 20, filters: ResultFilters = {}) {
@@ -85,6 +95,7 @@ export async function fetchResults(page = 1, pageSize = 20, filters: ResultFilte
       ...(filters.dateTo && { date_to: filters.dateTo }),
       ...(filters.objectName && { object_name: filters.objectName }),
       ...(filters.minConfidence != null && { min_confidence: filters.minConfidence / 100 }),
+      ...(filters.environmentType && { environment_type: filters.environmentType }),
     },
   });
   return data;
@@ -123,4 +134,8 @@ export async function toggleSchedule(id: number, enabled: boolean) {
 
 export async function deleteSchedule(id: number) {
   await api.delete(`/schedules/${id}`);
+}
+
+export async function triggerAnalysis(): Promise<void> {
+  await api.post('/analyze', {});
 }

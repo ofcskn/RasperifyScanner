@@ -1,21 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Image, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, ActivityIndicator,
+  TouchableOpacity, Alert,
+} from 'react-native';
 import { wsService } from '../../services/websocket';
-import { fetchHealth } from '../../services/api';
-
-interface Detection {
-  object_name: string;
-  confidence: number;
-  bbox: object | null;
-}
+import { fetchHealth, triggerAnalysis, EnvironmentScan } from '../../services/api';
 
 interface AnalysisEvent {
   event: string;
   id: number;
   frame_id: string;
   provider: string;
-  detections: Detection[];
+  detections: Array<{ object_name: string; confidence: number }>;
   metrics: Record<string, number>;
+  environment_scan: EnvironmentScan | null;
 }
 
 interface HealthData {
@@ -26,17 +24,42 @@ interface HealthData {
   memory_percent: number | null;
 }
 
+const ENV_ICONS: Record<string, string> = {
+  train: '🚆', bus: '🚌', subway: '🚇', tram: '🚊',
+  club: '🎶', bar: '🍺', restaurant: '🍽️', cafe: '☕',
+  park: '🌳', street: '🏙️', office: '🏢', shop: '🛍️',
+  stadium: '🏟️', waiting_room: '🪑', unknown: '📷',
+};
+
+const DENSITY_COLORS: Record<string, string> = {
+  empty: '#6b7280', sparse: '#059669', moderate: '#d97706',
+  dense: '#ea580c', packed: '#dc2626',
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return '—';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
 export default function DashboardScreen() {
   const [latest, setLatest] = useState<AnalysisEvent | null>(null);
   const [health, setHealth] = useState<HealthData | null>(null);
   const [connected, setConnected] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [lastScanTime, setLastScanTime] = useState<string | null>(null);
 
   useEffect(() => {
     wsService.connect();
     setConnected(true);
     const unsub = wsService.subscribe((data) => {
       const event = data as AnalysisEvent;
-      if (event.event === 'analysis_complete') setLatest(event);
+      if (event.event === 'analysis_complete') {
+        setLatest(event);
+        setLastScanTime(new Date().toISOString());
+      }
     });
     return () => {
       unsub();
@@ -59,33 +82,123 @@ export default function DashboardScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  const runScanNow = useCallback(async () => {
+    setScanning(true);
+    try {
+      await triggerAnalysis();
+    } catch {
+      Alert.alert('Scan Failed', 'Could not trigger analysis. Is the backend reachable?');
+    } finally {
+      setScanning(false);
+    }
+  }, []);
+
+  const env = latest?.environment_scan ?? null;
+  const envIcon = env ? (ENV_ICONS[env.environment_type] ?? '📷') : null;
+  const densityColor = env ? (DENSITY_COLORS[env.crowd_density] ?? '#6b7280') : '#6b7280';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>RasperifyScanner</Text>
 
-      {/* System Status */}
+      {/* Camera & Connection Status */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>System Status</Text>
+        <Text style={styles.cardTitle}>Camera & Connection</Text>
         {health ? (
           <>
-            <StatusRow label="Backend" value={health.status === 'ok' ? '✅ Online' : '❌ Offline'} />
-            <StatusRow label="Camera" value={health.camera_connected ? '✅ Connected' : '❌ Disconnected'} />
-            <StatusRow label="Active Adapter" value={health.active_adapter ?? 'None'} />
-            {health.cpu_percent != null && <StatusRow label="CPU" value={`${health.cpu_percent.toFixed(1)}%`} />}
-            {health.memory_percent != null && <StatusRow label="Memory" value={`${health.memory_percent.toFixed(1)}%`} />}
+            <View style={styles.cameraStatus}>
+              <View style={[styles.statusDot, { backgroundColor: health.camera_connected ? '#059669' : '#dc2626' }]} />
+              <Text style={styles.cameraStatusText}>
+                {health.camera_connected ? 'Camera Connected' : 'Camera Disconnected'}
+              </Text>
+            </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.rowLabel}>Backend</Text>
+              <Text style={[styles.rowValue, { color: health.status === 'ok' ? '#059669' : '#dc2626' }]}>
+                {health.status === 'ok' ? 'Online' : 'Offline'}
+              </Text>
+            </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.rowLabel}>Network</Text>
+              <Text style={styles.rowValue}>{health.active_adapter ?? 'None'}</Text>
+            </View>
+            {health.cpu_percent != null && (
+              <View style={styles.statusRow}>
+                <Text style={styles.rowLabel}>CPU / Memory</Text>
+                <Text style={styles.rowValue}>
+                  {health.cpu_percent.toFixed(1)}% / {health.memory_percent?.toFixed(1) ?? '—'}%
+                </Text>
+              </View>
+            )}
+            <View style={styles.statusRow}>
+              <Text style={styles.rowLabel}>Live Stream</Text>
+              <Text style={[styles.rowValue, { color: connected ? '#059669' : '#9ca3af' }]}>
+                {connected ? 'Connected' : 'Disconnected'}
+              </Text>
+            </View>
           </>
         ) : (
           <ActivityIndicator color="#2563eb" />
         )}
-        <StatusRow label="WebSocket" value={connected ? '✅ Connected' : '❌ Disconnected'} />
+
+        <TouchableOpacity
+          style={[styles.scanBtn, scanning && styles.scanBtnDisabled]}
+          onPress={runScanNow}
+          disabled={scanning}
+        >
+          {scanning
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={styles.scanBtnText}>Run Scan Now</Text>
+          }
+        </TouchableOpacity>
       </View>
 
-      {/* Latest Analysis */}
+      {/* Current Environment */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Latest Analysis</Text>
-        {latest ? (
+        <Text style={styles.cardTitle}>Current Environment</Text>
+        {env ? (
           <>
-            <Text style={styles.meta}>Provider: {latest.provider} · Frame: {latest.frame_id.slice(0, 8)}…</Text>
+            <View style={styles.envHeader}>
+              <Text style={styles.envIcon}>{envIcon}</Text>
+              <View style={styles.envHeaderText}>
+                <Text style={styles.envType}>{env.environment_type.replace('_', ' ').toUpperCase()}</Text>
+                <View style={[styles.densityBadge, { backgroundColor: densityColor }]}>
+                  <Text style={styles.densityText}>{env.crowd_density.toUpperCase()}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.peopleCount}>
+              <Text style={styles.peopleNumber}>{env.people_count}</Text>
+              <Text style={styles.peopleLabel}>people detected</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.ambientRow}>
+              <Text style={styles.ambientItem}>
+                💡 {env.ambient_conditions.lighting}
+              </Text>
+              <Text style={styles.ambientItem}>
+                🕐 {env.ambient_conditions.estimated_time}
+              </Text>
+            </View>
+
+            {env.notable_observations.length > 0 && (
+              <>
+                <Text style={styles.obsLabel}>Notable</Text>
+                {env.notable_observations.map((obs, i) => (
+                  <Text key={i} style={styles.obsItem}>• {obs}</Text>
+                ))}
+              </>
+            )}
+
+            <Text style={styles.scanMeta}>
+              via {latest?.provider} · {timeAgo(lastScanTime)}
+            </Text>
+          </>
+        ) : latest ? (
+          <>
             <Text style={styles.sectionLabel}>Detections ({latest.detections.length})</Text>
             {latest.detections.map((d, i) => (
               <View key={i} style={styles.detectionRow}>
@@ -93,29 +206,21 @@ export default function DashboardScreen() {
                 <Text style={styles.confidence}>{(d.confidence * 100).toFixed(0)}%</Text>
               </View>
             ))}
-            {Object.keys(latest.metrics).length > 0 && (
-              <>
-                <Text style={styles.sectionLabel}>Metrics</Text>
-                {Object.entries(latest.metrics).map(([k, v]) => (
-                  <StatusRow key={k} label={k} value={v.toFixed(3)} />
-                ))}
-              </>
-            )}
           </>
         ) : (
-          <Text style={styles.empty}>Waiting for analysis results…</Text>
+          <Text style={styles.empty}>
+            Waiting for environment scan…{'\n'}Scans run automatically every 5 minutes.
+          </Text>
         )}
       </View>
-    </ScrollView>
-  );
-}
 
-function StatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
-    </View>
+      {/* Auto-scan info strip */}
+      <View style={styles.infoStrip}>
+        <Text style={styles.infoText}>
+          Auto-scan every 5 min · Last: {timeAgo(lastScanTime)}
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -123,15 +228,50 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f4f8' },
   content: { padding: 16, paddingBottom: 32 },
   title: { fontSize: 22, fontWeight: 'bold', color: '#1e3a5f', marginBottom: 16 },
+
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#1e3a5f', marginBottom: 12 },
-  meta: { fontSize: 12, color: '#6b7280', marginBottom: 8 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginTop: 8, marginBottom: 4 },
+
+  cameraStatus: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  cameraStatusText: { fontSize: 15, fontWeight: '600', color: '#111827' },
+
+  statusRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  rowLabel: { fontSize: 13, color: '#6b7280' },
+  rowValue: { fontSize: 13, fontWeight: '500', color: '#111827' },
+
+  scanBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
+  scanBtnDisabled: { backgroundColor: '#93c5fd' },
+  scanBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  envHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  envIcon: { fontSize: 40, marginRight: 14 },
+  envHeaderText: { flex: 1 },
+  envType: { fontSize: 18, fontWeight: '800', color: '#111827', letterSpacing: 1 },
+  densityBadge: { marginTop: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
+  densityText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+
+  peopleCount: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 12 },
+  peopleNumber: { fontSize: 48, fontWeight: '900', color: '#2563eb', lineHeight: 52 },
+  peopleLabel: { fontSize: 16, color: '#6b7280', marginLeft: 8 },
+
+  divider: { height: 1, backgroundColor: '#f3f4f6', marginBottom: 10 },
+
+  ambientRow: { flexDirection: 'row', gap: 16, marginBottom: 10 },
+  ambientItem: { fontSize: 13, color: '#374151' },
+
+  obsLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
+  obsItem: { fontSize: 13, color: '#4b5563', paddingVertical: 2 },
+
+  scanMeta: { fontSize: 11, color: '#9ca3af', marginTop: 10, textAlign: 'right' },
+
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
   detectionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 0.5, borderBottomColor: '#e5e7eb' },
   objectName: { fontSize: 14, color: '#111827' },
   confidence: { fontSize: 14, fontWeight: '600', color: '#2563eb' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  rowLabel: { fontSize: 13, color: '#6b7280' },
-  rowValue: { fontSize: 13, fontWeight: '500', color: '#111827' },
-  empty: { fontSize: 14, color: '#9ca3af', textAlign: 'center', paddingVertical: 16 },
+
+  empty: { fontSize: 14, color: '#9ca3af', textAlign: 'center', paddingVertical: 20, lineHeight: 22 },
+
+  infoStrip: { backgroundColor: '#eff6ff', borderRadius: 8, padding: 10, alignItems: 'center' },
+  infoText: { fontSize: 12, color: '#3b82f6' },
 });
