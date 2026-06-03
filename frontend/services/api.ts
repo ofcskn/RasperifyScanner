@@ -29,30 +29,15 @@ api.interceptors.response.use(
   (res: AxiosResponse) => res,
   async (error) => {
     const original = error.config;
-    if ((error.response?.status === 401 || error.response?.status === 403) && !original._retry) {
+    if (error.response?.status === 401 && refreshToken && !original._retry) {
       original._retry = true;
-      if (refreshToken && error.response?.status === 401) {
-        try {
-          const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
-          setTokens(data.access_token, data.refresh_token);
-          original.headers.Authorization = `Bearer ${data.access_token}`;
-          return api(original);
-        } catch {
-          clearTokens();
-        }
-      }
-      // 403 or refresh failed — try a fresh login from env vars
-      const username = process.env.EXPO_PUBLIC_API_USERNAME;
-      const password = process.env.EXPO_PUBLIC_API_PASSWORD;
-      if (username && password) {
-        try {
-          const { data } = await axios.post(`${BASE_URL}/auth/login`, { username, password });
-          setTokens(data.access_token, data.refresh_token);
-          original.headers.Authorization = `Bearer ${data.access_token}`;
-          return api(original);
-        } catch {
-          clearTokens();
-        }
+      try {
+        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
+        setTokens(data.access_token, data.refresh_token);
+        original.headers.Authorization = `Bearer ${data.access_token}`;
+        return api(original);
+      } catch {
+        clearTokens();
       }
     }
     return Promise.reject(error);
@@ -69,22 +54,14 @@ export interface LoginResponse {
   token_type: string;
 }
 
+export function isAuthenticated(): boolean {
+  return accessToken !== null;
+}
+
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const { data } = await api.post<LoginResponse>('/auth/login', { username, password });
   setTokens(data.access_token, data.refresh_token);
   return data;
-}
-
-export async function initAuth(): Promise<void> {
-  const username = process.env.EXPO_PUBLIC_API_USERNAME;
-  const password = process.env.EXPO_PUBLIC_API_PASSWORD;
-  if (username && password && !accessToken) {
-    try {
-      await login(username, password);
-    } catch {
-      // Pi may be unreachable at startup; token will be fetched when needed
-    }
-  }
 }
 
 export interface EnvironmentScan {
