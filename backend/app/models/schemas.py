@@ -23,7 +23,7 @@ class RefreshRequest(BaseModel):
 # --- Frame Analysis ---
 
 class AnalyzeRequest(BaseModel):
-    frame_base64: str = Field(..., description="Base64-encoded JPEG frame")
+    frame_base64: Optional[str] = Field(None, description="Base64-encoded JPEG frame; if omitted, camera captures one")
     prompt: Optional[str] = Field(None, description="Custom analysis prompt")
 
 
@@ -38,6 +38,14 @@ class MetricItem(BaseModel):
     value: float
 
 
+class EnvironmentScanSchema(BaseModel):
+    people_count: int
+    environment_type: str
+    crowd_density: str
+    ambient_conditions: dict
+    notable_observations: list[str]
+
+
 class AnalysisResponse(BaseModel):
     id: int
     frame_id: str
@@ -45,6 +53,7 @@ class AnalysisResponse(BaseModel):
     detections: list[DetectionItem]
     metrics: list[MetricItem]
     raw_response: str
+    environment_scan: Optional[EnvironmentScanSchema] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

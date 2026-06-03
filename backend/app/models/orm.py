@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Float, Boolean, Integer, Text, ForeignKey, DateTime, func
+from sqlalchemy import String, Float, Boolean, Integer, Text, ForeignKey, DateTime, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.database import Base
 
@@ -20,6 +20,7 @@ class Analysis(Base):
     frame_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     raw_response: Mapped[str] = mapped_column(Text, nullable=False)
+    environment_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     detections: Mapped[list["DetectionResult"]] = relationship(

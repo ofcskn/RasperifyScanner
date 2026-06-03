@@ -3,6 +3,7 @@
 Orchestrates: capture frame → motion check → AI analysis → persist to DB → broadcast via WebSocket.
 """
 import base64
+import dataclasses
 import io
 import json
 import logging
@@ -12,6 +13,7 @@ import uuid
 from app.models.database import AsyncSessionLocal
 from app.models.orm import Analysis, DetectionResult, IntensityMetric
 from app.services.ai.multi_provider import multi_ai_service
+from app.services.ai.prompts import ENVIRONMENT_SCAN_PROMPT
 from app.services.camera import camera_service
 from app.services.connection import connection_service
 
@@ -57,13 +59,18 @@ class AnalysisPipelineController:
         if not motion_detected:
             return {"event": "no_motion", "frame_id": frame_id, "motion_detected": False}
 
-        result = await multi_ai_service.analyze(frame_base64, prompt)
+        result = await multi_ai_service.analyze(frame_base64, prompt or ENVIRONMENT_SCAN_PROMPT)
+
+        env_dict = None
+        if result.environment_scan is not None:
+            env_dict = dataclasses.asdict(result.environment_scan)
 
         async with AsyncSessionLocal() as db:
             analysis = Analysis(
                 frame_id=frame_id,
                 provider=result.provider,
                 raw_response=result.raw_response,
+                environment_json=env_dict,
             )
             db.add(analysis)
             await db.flush()
@@ -93,6 +100,7 @@ class AnalysisPipelineController:
                 for d in result.detections
             ],
             "metrics": result.metrics,
+            "environment_scan": env_dict,
         }
         await connection_service.broadcast(broadcast_payload)
 

@@ -11,11 +11,21 @@ class DetectedObject:
 
 
 @dataclass
+class EnvironmentScan:
+    people_count: int
+    environment_type: str
+    crowd_density: str
+    ambient_conditions: dict
+    notable_observations: list[str]
+
+
+@dataclass
 class AnalysisResult:
     provider: str
     raw_response: str
     detections: list[DetectedObject] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
+    environment_scan: EnvironmentScan | None = None
 
 
 class AIProvider(ABC):

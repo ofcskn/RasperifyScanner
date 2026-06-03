@@ -2,12 +2,12 @@ import json
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import select, func
+from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import get_db
 from app.models.orm import Analysis, DetectionResult, IntensityMetric
-from app.models.schemas import AnalysisResponse, DetectionItem, MetricItem, AnalysisListResponse
+from app.models.schemas import AnalysisResponse, DetectionItem, MetricItem, AnalysisListResponse, EnvironmentScanSchema
 from app.services.auth import auth_service
 
 router = APIRouter(prefix="/results", tags=["results"])
@@ -22,11 +22,13 @@ def _require_auth(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
 
 
 def _to_response(analysis: Analysis) -> AnalysisResponse:
+    env = EnvironmentScanSchema(**analysis.environment_json) if analysis.environment_json else None
     return AnalysisResponse(
         id=analysis.id,
         frame_id=analysis.frame_id,
         provider=analysis.provider,
         raw_response=analysis.raw_response,
+        environment_scan=env,
         created_at=analysis.created_at,
         detections=[
             DetectionItem(
@@ -40,7 +42,7 @@ def _to_response(analysis: Analysis) -> AnalysisResponse:
     )
 
 
-def _build_conditions(date_from, date_to, object_name, min_confidence):
+def _build_conditions(date_from, date_to, object_name, min_confidence, environment_type=None):
     conditions = []
     if date_from:
         conditions.append(Analysis.created_at >= datetime.fromisoformat(date_from))
@@ -54,6 +56,10 @@ def _build_conditions(date_from, date_to, object_name, min_confidence):
             det_conditions.append(DetectionResult.confidence >= min_confidence)
         subq = select(DetectionResult.analysis_id).where(*det_conditions).distinct()
         conditions.append(Analysis.id.in_(subq))
+    if environment_type:
+        conditions.append(
+            sqlfunc.json_extract(Analysis.environment_json, "$.environment_type") == environment_type
+        )
     return conditions
 
 
@@ -65,13 +71,14 @@ async def list_results(
     date_to: str | None = None,
     object_name: str | None = None,
     min_confidence: float | None = None,
+    environment_type: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(_require_auth),
 ):
-    conditions = _build_conditions(date_from, date_to, object_name, min_confidence)
+    conditions = _build_conditions(date_from, date_to, object_name, min_confidence, environment_type)
     offset = (page - 1) * page_size
 
-    count_q = select(func.count(Analysis.id))
+    count_q = select(sqlfunc.count(Analysis.id))
     if conditions:
         count_q = count_q.where(*conditions)
     total_result = await db.execute(count_q)

@@ -7,14 +7,8 @@ from google import genai
 from google.genai import types
 
 from app.config.settings import settings
-from app.services.ai.base import AIProvider, AnalysisResult, DetectedObject
-
-_DEFAULT_PROMPT = (
-    "Analyze this image. Return JSON with keys: "
-    "'detections' (array of {object_name, confidence 0-1, bbox {x,y,w,h} or null}) and "
-    "'metrics' (object of string->float, e.g. brightness, sharpness). "
-    "Return ONLY valid JSON."
-)
+from app.services.ai.base import AIProvider, AnalysisResult, DetectedObject, EnvironmentScan
+from app.services.ai.prompts import ENVIRONMENT_SCAN_PROMPT
 
 _MODEL = "gemini-1.5-flash"
 
@@ -34,11 +28,12 @@ class GeminiProvider(AIProvider):
         )
         response = await self._client.aio.models.generate_content(
             model=_MODEL,
-            contents=[prompt or _DEFAULT_PROMPT, image_part],
+            contents=[prompt or ENVIRONMENT_SCAN_PROMPT, image_part],
         )
         return self._parse(response.text)
 
     def _parse(self, raw: str) -> AnalysisResult:
+        environment_scan = None
         try:
             clean = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`")
             data = json.loads(clean)
@@ -51,6 +46,20 @@ class GeminiProvider(AIProvider):
                 for d in data.get("detections", [])
             ]
             metrics = {k: float(v) for k, v in data.get("metrics", {}).items()}
+            if "people_count" in data:
+                environment_scan = EnvironmentScan(
+                    people_count=int(data.get("people_count", 0)),
+                    environment_type=str(data.get("environment_type", "unknown")),
+                    crowd_density=str(data.get("crowd_density", "unknown")),
+                    ambient_conditions=data.get("ambient_conditions", {}),
+                    notable_observations=list(data.get("notable_observations", [])),
+                )
         except Exception:
             detections, metrics = [], {}
-        return AnalysisResult(provider=self.name, raw_response=raw, detections=detections, metrics=metrics)
+        return AnalysisResult(
+            provider=self.name,
+            raw_response=raw,
+            detections=detections,
+            metrics=metrics,
+            environment_scan=environment_scan,
+        )
