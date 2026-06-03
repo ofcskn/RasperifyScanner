@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select, func as sqlfunc
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import get_db
@@ -84,7 +85,13 @@ async def list_results(
     total_result = await db.execute(count_q)
     total = total_result.scalar_one()
 
-    data_q = select(Analysis).order_by(Analysis.created_at.desc()).offset(offset).limit(page_size)
+    data_q = (
+        select(Analysis)
+        .options(selectinload(Analysis.detections), selectinload(Analysis.metrics))
+        .order_by(Analysis.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
     if conditions:
         data_q = data_q.where(*conditions)
     result = await db.execute(data_q)
@@ -94,7 +101,11 @@ async def list_results(
 
 @router.get("/{result_id}", response_model=AnalysisResponse)
 async def get_result(result_id: int, db: AsyncSession = Depends(get_db), _: dict = Depends(_require_auth)):
-    result = await db.execute(select(Analysis).where(Analysis.id == result_id))
+    result = await db.execute(
+        select(Analysis)
+        .options(selectinload(Analysis.detections), selectinload(Analysis.metrics))
+        .where(Analysis.id == result_id)
+    )
     analysis = result.scalar_one_or_none()
     if not analysis:
         raise HTTPException(status_code=404, detail="Result not found")

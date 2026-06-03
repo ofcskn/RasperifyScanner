@@ -144,3 +144,13 @@ export async function deleteSchedule(id: number) {
 export async function triggerAnalysis(): Promise<void> {
   await api.post('/analyze', {});
 }
+
+export async function connectCamera(): Promise<{ connected: boolean }> {
+  const { data } = await api.post<{ connected: boolean }>('/camera/connect');
+  return data;
+}
+
+export async function disconnectCamera(): Promise<{ connected: boolean }> {
+  const { data } = await api.post<{ connected: boolean }>('/camera/disconnect');
+  return data;
+}

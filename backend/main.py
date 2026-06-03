@@ -11,7 +11,7 @@ from app.services.scheduler import scheduler_service
 from app.services.pipeline import scheduled_pipeline_trigger
 from app.services.scheduler import set_pipeline_trigger
 
-from app.api.routes import auth, analyze, results, schedules, health
+from app.api.routes import auth, analyze, results, schedules, health, camera
 from app.api import websocket
 
 logger = logging.getLogger(__name__)
@@ -69,4 +69,5 @@ app.include_router(analyze.router, prefix=api_prefix)
 app.include_router(results.router, prefix=api_prefix)
 app.include_router(schedules.router, prefix=api_prefix)
 app.include_router(health.router, prefix=api_prefix)
+app.include_router(camera.router, prefix=api_prefix)
 app.include_router(websocket.router)

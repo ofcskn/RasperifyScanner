@@ -12,6 +12,7 @@ from app.services.ai.openai_provider import OpenAIProvider
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 60.0
+_RATE_LIMIT_COOLDOWN = 60.0
 
 
 class MultiAIProviderService:
@@ -23,6 +24,7 @@ class MultiAIProviderService:
         self._primary = settings.ai_primary_provider
         self._fallback = "openai" if self._primary == "gemini" else "gemini"
         self._cache: dict[str, tuple[float, AnalysisResult]] = {}
+        self._rate_limited_until: dict[str, float] = {}
 
     def _cache_key(self, frame_base64: str, prompt: str | None) -> str:
         h = hashlib.sha256((frame_base64[:512] + str(prompt)).encode()).hexdigest()[:16]
@@ -47,6 +49,12 @@ class MultiAIProviderService:
             return cached
 
         for provider_name in (self._primary, self._fallback):
+            cooldown_until = self._rate_limited_until.get(provider_name, 0)
+            if time.monotonic() < cooldown_until:
+                remaining = cooldown_until - time.monotonic()
+                logger.warning("Provider %s in rate-limit cooldown for %.0fs, skipping", provider_name, remaining)
+                continue
+
             provider = self._providers[provider_name]
             for attempt in range(settings.ai_retry_max):
                 try:
@@ -55,7 +63,10 @@ class MultiAIProviderService:
                     return result
                 except Exception as exc:
                     if self._is_rate_limited(exc):
-                        logger.warning("Provider %s rate-limited (429), skipping to fallback", provider_name)
+                        self._rate_limited_until[provider_name] = time.monotonic() + _RATE_LIMIT_COOLDOWN
+                        logger.warning(
+                            "Provider %s rate-limited (429), cooling down for %.0fs", provider_name, _RATE_LIMIT_COOLDOWN
+                        )
                         break
                     wait = settings.ai_retry_backoff_base ** attempt
                     logger.warning("Provider %s attempt %d failed: %s — retrying in %.1fs", provider_name, attempt + 1, exc, wait)

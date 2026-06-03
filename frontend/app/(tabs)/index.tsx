@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert, Image,
 } from 'react-native';
 import { wsService } from '../../services/websocket';
-import { fetchHealth, triggerAnalysis, EnvironmentScan } from '../../services/api';
+import { fetchHealth, triggerAnalysis, connectCamera, disconnectCamera, EnvironmentScan } from '../../services/api';
 
 interface AnalysisEvent {
   event: string;
@@ -50,6 +50,7 @@ export default function DashboardScreen() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
 
   useEffect(() => {
@@ -93,6 +94,23 @@ export default function DashboardScreen() {
       setScanning(false);
     }
   }, []);
+
+  const toggleCamera = useCallback(async () => {
+    setCameraLoading(true);
+    try {
+      if (health?.camera_connected) {
+        await disconnectCamera();
+      } else {
+        await connectCamera();
+      }
+      const h = await fetchHealth();
+      setHealth(h);
+    } catch {
+      Alert.alert('Camera Error', 'Could not change camera state. Is the backend reachable?');
+    } finally {
+      setCameraLoading(false);
+    }
+  }, [health?.camera_connected]);
 
   const env = latest?.environment_scan ?? null;
   const envIcon = env ? (ENV_ICONS[env.environment_type] ?? '📷') : null;
@@ -140,6 +158,29 @@ export default function DashboardScreen() {
           </>
         ) : (
           <ActivityIndicator color="#2563eb" />
+        )}
+
+        {health && (
+          <TouchableOpacity
+            style={[
+              styles.liveModeBtn,
+              health.camera_connected ? styles.liveModeBtnActive : styles.liveModeBtnInactive,
+              cameraLoading && styles.scanBtnDisabled,
+            ]}
+            onPress={toggleCamera}
+            disabled={cameraLoading}
+          >
+            {cameraLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <View style={[styles.liveDot, { backgroundColor: health.camera_connected ? '#fff' : '#9ca3af' }]} />
+                <Text style={styles.liveModeBtnText}>
+                  {health.camera_connected ? 'LIVE  ·  Disconnect' : 'Connect Camera (Live Mode)'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
 
         <TouchableOpacity
@@ -247,7 +288,13 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 13, color: '#6b7280' },
   rowValue: { fontSize: 13, fontWeight: '500', color: '#111827' },
 
-  scanBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
+  liveModeBtn: { flexDirection: 'row', borderRadius: 10, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', marginTop: 12, gap: 8 },
+  liveModeBtnActive: { backgroundColor: '#dc2626' },
+  liveModeBtnInactive: { backgroundColor: '#374151' },
+  liveModeBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+
+  scanBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
   scanBtnDisabled: { backgroundColor: '#93c5fd' },
   scanBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
