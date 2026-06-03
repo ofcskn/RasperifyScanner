@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert, Image,
 } from 'react-native';
 import { wsService } from '../../services/websocket';
-import { fetchHealth, triggerAnalysis, connectCamera, disconnectCamera, EnvironmentScan } from '../../services/api';
+import { fetchHealth, triggerAnalysis, EnvironmentScan } from '../../services/api';
 
 interface AnalysisEvent {
   event: 'analysis_complete';
@@ -15,12 +15,6 @@ interface AnalysisEvent {
   detections: Array<{ object_name: string; confidence: number }>;
   metrics: Record<string, number>;
   environment_scan: EnvironmentScan | null;
-}
-
-interface LiveFrameEvent {
-  event: 'live_frame';
-  frame_id: string;
-  frame_thumbnail: string;
 }
 
 interface HealthData {
@@ -53,44 +47,34 @@ function timeAgo(iso: string | null): string {
 
 export default function DashboardScreen() {
   const [latest, setLatest] = useState<AnalysisEvent | null>(null);
-  const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthData | null>(null);
-  const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [cameraLoading, setCameraLoading] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
 
+  // Subscribe to analysis_complete events. WebSocket is connected at app level (_layout.tsx).
   useEffect(() => {
-    wsService.connect();
-    setConnected(true);
     const unsub = wsService.subscribe((data) => {
       const ev = data as { event: string };
       if (ev.event === 'analysis_complete') {
         setLatest(data as AnalysisEvent);
         setLastScanTime(new Date().toISOString());
-      } else if (ev.event === 'live_frame') {
-        setLiveFrame((data as LiveFrameEvent).frame_thumbnail);
       }
     });
-    return () => {
-      unsub();
-      wsService.disconnect();
-      setConnected(false);
-    };
+    return () => unsub();
   }, []);
 
+  // Poll health every 10 seconds.
   useEffect(() => {
     const load = async () => {
       try {
-        const h = await fetchHealth();
-        setHealth(h);
+        setHealth(await fetchHealth());
       } catch {
         setHealth({ status: 'unreachable', camera_connected: false, active_adapter: null, cpu_percent: null, memory_percent: null });
       }
     };
     load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
+    const id = setInterval(load, 10000);
+    return () => clearInterval(id);
   }, []);
 
   const runScanNow = useCallback(async () => {
@@ -104,50 +88,33 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  const toggleCamera = useCallback(async () => {
-    setCameraLoading(true);
-    try {
-      if (health?.camera_connected) {
-        await disconnectCamera();
-        setLiveFrame(null);
-      } else {
-        await connectCamera();
-      }
-      const h = await fetchHealth();
-      setHealth(h);
-    } catch {
-      Alert.alert('Camera Error', 'Could not change camera state. Is the backend reachable?');
-    } finally {
-      setCameraLoading(false);
-    }
-  }, [health?.camera_connected]);
-
   const env = latest?.environment_scan ?? null;
   const envIcon = env ? (ENV_ICONS[env.environment_type] ?? '📷') : null;
   const densityColor = env ? (DENSITY_COLORS[env.crowd_density] ?? '#6b7280') : '#6b7280';
-  const displayFrame = liveFrame ?? latest?.frame_thumbnail ?? null;
-  const isShowingLive = !!liveFrame;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>RasperifyScanner</Text>
 
-      {/* Camera & Connection Status */}
+      {/* Status card */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Camera & Connection</Text>
+        <Text style={styles.cardTitle}>System Status</Text>
         {health ? (
           <>
-            <View style={styles.cameraStatus}>
-              <View style={[styles.statusDot, { backgroundColor: health.camera_connected ? '#059669' : '#dc2626' }]} />
-              <Text style={styles.cameraStatusText}>
-                {health.camera_connected ? 'Camera Connected' : 'Camera Disconnected'}
-              </Text>
-            </View>
             <View style={styles.statusRow}>
               <Text style={styles.rowLabel}>Backend</Text>
               <Text style={[styles.rowValue, { color: health.status === 'ok' ? '#059669' : '#dc2626' }]}>
                 {health.status === 'ok' ? 'Online' : 'Offline'}
               </Text>
+            </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.rowLabel}>Camera</Text>
+              <View style={styles.rowRight}>
+                <View style={[styles.dot, { backgroundColor: health.camera_connected ? '#059669' : '#6b7280' }]} />
+                <Text style={styles.rowValue}>
+                  {health.camera_connected ? 'Connected' : 'Disconnected'}
+                </Text>
+              </View>
             </View>
             <View style={styles.statusRow}>
               <Text style={styles.rowLabel}>Network</Text>
@@ -161,38 +128,9 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             )}
-            <View style={styles.statusRow}>
-              <Text style={styles.rowLabel}>Live Stream</Text>
-              <Text style={[styles.rowValue, { color: connected ? '#059669' : '#9ca3af' }]}>
-                {connected ? 'Connected' : 'Disconnected'}
-              </Text>
-            </View>
           </>
         ) : (
           <ActivityIndicator color="#2563eb" />
-        )}
-
-        {health && (
-          <TouchableOpacity
-            style={[
-              styles.liveModeBtn,
-              health.camera_connected ? styles.liveModeBtnActive : styles.liveModeBtnInactive,
-              cameraLoading && styles.scanBtnDisabled,
-            ]}
-            onPress={toggleCamera}
-            disabled={cameraLoading}
-          >
-            {cameraLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <View style={[styles.liveDot, { backgroundColor: health.camera_connected ? '#fff' : '#9ca3af' }]} />
-                <Text style={styles.liveModeBtnText}>
-                  {health.camera_connected ? 'LIVE  ·  Disconnect' : 'Connect Camera (Live Mode)'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
         )}
 
         <TouchableOpacity
@@ -207,27 +145,19 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Current Environment */}
+      {/* Last analysis card */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Current Environment</Text>
+        <Text style={styles.cardTitle}>Last Analysis</Text>
 
-        {displayFrame ? (
-          <View style={styles.frameContainer}>
-            <Image
-              source={{ uri: `data:image/jpeg;base64,${displayFrame}` }}
-              style={styles.frameImage}
-              resizeMode="cover"
-            />
-            {isShowingLive && (
-              <View style={styles.liveBadge}>
-                <View style={styles.liveBadgeDot} />
-                <Text style={styles.liveBadgeText}>LIVE</Text>
-              </View>
-            )}
-          </View>
+        {latest?.frame_thumbnail ? (
+          <Image
+            source={{ uri: `data:image/jpeg;base64,${latest.frame_thumbnail}` }}
+            style={styles.frameImage}
+            resizeMode="cover"
+          />
         ) : (
           <View style={styles.framePlaceholder}>
-            <Text style={styles.framePlaceholderText}>No frame captured yet</Text>
+            <Text style={styles.framePlaceholderText}>No scan yet — tap Run Scan Now or go to Live Camera tab</Text>
           </View>
         )}
 
@@ -277,16 +207,13 @@ export default function DashboardScreen() {
           </>
         ) : (
           <Text style={styles.empty}>
-            Use "Run Scan Now" or configure a schedule in Settings.
+            No analysis results yet. Use "Run Scan Now" or open the Live Camera tab.
           </Text>
         )}
       </View>
 
-      {/* Last scan info strip */}
       <View style={styles.infoStrip}>
-        <Text style={styles.infoText}>
-          Last scan: {timeAgo(lastScanTime)}
-        </Text>
+        <Text style={styles.infoText}>Last scan: {timeAgo(lastScanTime)}</Text>
       </View>
     </ScrollView>
   );
@@ -300,31 +227,19 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#1e3a5f', marginBottom: 12 },
 
-  cameraStatus: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  cameraStatusText: { fontSize: 15, fontWeight: '600', color: '#111827' },
-
-  statusRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
   rowLabel: { fontSize: 13, color: '#6b7280' },
+  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowValue: { fontSize: 13, fontWeight: '500', color: '#111827' },
+  dot: { width: 8, height: 8, borderRadius: 4 },
 
-  liveModeBtn: { flexDirection: 'row', borderRadius: 10, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', marginTop: 12, gap: 8 },
-  liveModeBtnActive: { backgroundColor: '#dc2626' },
-  liveModeBtnInactive: { backgroundColor: '#374151' },
-  liveModeBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  liveDot: { width: 8, height: 8, borderRadius: 4 },
-
-  scanBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
+  scanBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
   scanBtnDisabled: { backgroundColor: '#93c5fd' },
   scanBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-  frameContainer: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#0f172a', overflow: 'hidden' },
-  frameImage: { width: '100%', height: '100%' },
-  framePlaceholder: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' },
-  framePlaceholderText: { color: '#475569', fontSize: 13 },
-  liveBadge: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#dc2626', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 5 },
-  liveBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
-  liveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  frameImage: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#0f172a' },
+  framePlaceholder: { width: '100%', height: 120, borderRadius: 8, marginBottom: 14, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  framePlaceholderText: { color: '#475569', fontSize: 13, textAlign: 'center', lineHeight: 20 },
 
   envHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   envIcon: { fontSize: 32, marginRight: 12 },

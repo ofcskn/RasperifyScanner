@@ -16,7 +16,16 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📷</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📊</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="live"
+        options={{
+          title: 'Live Camera',
+          headerStyle: { backgroundColor: '#0a0a0a' },
+          headerTintColor: '#9ca3af',
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📹</Text>,
         }}
       />
       <Tabs.Screen

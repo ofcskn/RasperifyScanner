@@ -4,10 +4,11 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { login } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);

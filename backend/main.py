@@ -30,22 +30,30 @@ _LIVE_THUMB_QUALITY = 60
 
 
 async def _live_frame_broadcaster() -> None:
-    """Broadcast live camera frames to connected WebSocket clients when camera is active."""
+    """Broadcast live camera frames to WebSocket clients when the camera is active.
+
+    Uses get_latest_frame() (queue read) instead of capture_now() so we never
+    touch the picamera2 object from the event-loop thread — _run() owns it exclusively.
+    PIL resize runs in an executor to avoid blocking the event loop.
+    """
+    loop = asyncio.get_running_loop()
     while True:
         try:
             if camera_service._running and connection_service.connection_count > 0:
-                frame = camera_service.capture_now()
-                thumb = resize_and_encode(
-                    base64.b64decode(frame.frame_base64),
-                    width=_LIVE_THUMB_WIDTH,
-                    height=_LIVE_THUMB_HEIGHT,
-                    quality=_LIVE_THUMB_QUALITY,
-                )
-                await connection_service.broadcast({
-                    "event": "live_frame",
-                    "frame_id": frame.frame_id,
-                    "frame_thumbnail": thumb,
-                })
+                frame = camera_service.get_latest_frame()
+                if frame is not None:
+                    raw = base64.b64decode(frame.frame_base64)
+                    thumb = await loop.run_in_executor(
+                        None,
+                        lambda b=raw: resize_and_encode(
+                            b, _LIVE_THUMB_WIDTH, _LIVE_THUMB_HEIGHT, _LIVE_THUMB_QUALITY
+                        ),
+                    )
+                    await connection_service.broadcast({
+                        "event": "live_frame",
+                        "frame_id": frame.frame_id,
+                        "frame_thumbnail": thumb,
+                    })
         except Exception as exc:
             logger.warning("Live frame broadcast error: %s", exc)
         await asyncio.sleep(_LIVE_FRAME_INTERVAL)
