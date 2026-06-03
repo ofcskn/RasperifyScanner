@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
-  TouchableOpacity, TextInput,
+  TouchableOpacity, TextInput, Image,
 } from 'react-native';
 import { fetchResults, AnalysisResult, ResultFilters, EnvironmentScan } from '../../services/api';
 
@@ -61,39 +61,64 @@ export default function HistoryScreen() {
     stadium: '🏟️', waiting_room: '🪑', unknown: '📷',
   };
 
+  const DENSITY_COLORS: Record<string, string> = {
+    empty: '#6b7280', sparse: '#059669', moderate: '#d97706',
+    dense: '#ea580c', packed: '#dc2626',
+  };
+
   const renderItem = ({ item }: { item: AnalysisResult }) => {
     const env: EnvironmentScan | null = item.environment_scan ?? null;
+    const densityColor = env ? (DENSITY_COLORS[env.crowd_density] ?? '#6b7280') : '#6b7280';
     return (
       <View style={styles.card}>
+        {/* Thumbnail */}
+        {item.frame_thumbnail ? (
+          <Image
+            source={{ uri: `data:image/jpeg;base64,${item.frame_thumbnail}` }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.thumbnailPlaceholder}>
+            <Text style={styles.thumbnailPlaceholderText}>No image</Text>
+          </View>
+        )}
+
+        {/* Header row */}
         <View style={styles.cardHeader}>
           <Text style={styles.provider}>{item.provider.toUpperCase()}</Text>
           <Text style={styles.timestamp}>{new Date(item.created_at).toLocaleString()}</Text>
         </View>
 
+        {/* Environment summary */}
         {env ? (
           <View style={styles.envRow}>
             <Text style={styles.envIcon}>{ENV_ICONS[env.environment_type] ?? '📷'}</Text>
             <Text style={styles.envType}>{env.environment_type.replace('_', ' ')}</Text>
+            <View style={[styles.densityBadge, { backgroundColor: densityColor }]}>
+              <Text style={styles.densityText}>{env.crowd_density}</Text>
+            </View>
             <Text style={styles.dot}>·</Text>
             <Text style={styles.peopleCount}>👥 {env.people_count}</Text>
-            <Text style={styles.dot}>·</Text>
-            <Text style={styles.density}>{env.crowd_density}</Text>
           </View>
         ) : (
           <Text style={styles.frameId}>Frame: {item.frame_id.slice(0, 12)}…</Text>
         )}
 
-        <Text style={styles.detectionCount}>
-          {item.detections.length} detection{item.detections.length !== 1 ? 's' : ''}
-        </Text>
-        {item.detections.slice(0, 3).map((d, i) => (
-          <View key={i} style={styles.detectionRow}>
-            <Text style={styles.objName}>{d.object_name}</Text>
-            <Text style={styles.conf}>{(d.confidence * 100).toFixed(0)}%</Text>
-          </View>
-        ))}
-        {item.detections.length > 3 && (
-          <Text style={styles.more}>+{item.detections.length - 3} more</Text>
+        {/* Detections */}
+        {item.detections.length > 0 && (
+          <>
+            <View style={styles.divider} />
+            {item.detections.slice(0, 3).map((d, i) => (
+              <View key={i} style={styles.detectionRow}>
+                <Text style={styles.objName}>{d.object_name}</Text>
+                <Text style={styles.conf}>{(d.confidence * 100).toFixed(0)}%</Text>
+              </View>
+            ))}
+            {item.detections.length > 3 && (
+              <Text style={styles.more}>+{item.detections.length - 3} more</Text>
+            )}
+          </>
         )}
       </View>
     );
@@ -190,20 +215,28 @@ const styles = StyleSheet.create({
   applyBtn: { backgroundColor: '#2563eb', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   applyText: { color: '#fff', fontWeight: '600' },
   error: { color: '#dc2626', textAlign: 'center', margin: 32 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+
+  card: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3, overflow: 'hidden' },
+  thumbnail: { width: '100%', height: 160, backgroundColor: '#0f172a' },
+  thumbnailPlaceholder: { width: '100%', height: 120, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' },
+  thumbnailPlaceholderText: { color: '#475569', fontSize: 12 },
+
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
   provider: { fontSize: 11, fontWeight: '700', color: '#2563eb', backgroundColor: '#eff6ff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   timestamp: { fontSize: 11, color: '#9ca3af' },
-  frameId: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
-  detectionCount: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
-  detectionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-  objName: { fontSize: 13, color: '#111827' },
-  conf: { fontSize: 13, fontWeight: '500', color: '#059669' },
-  more: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
-  envRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 4, gap: 4 },
-  envIcon: { fontSize: 14 },
+
+  envRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 8, gap: 6 },
+  envIcon: { fontSize: 15 },
   envType: { fontSize: 13, fontWeight: '600', color: '#1e3a5f', textTransform: 'capitalize' },
+  densityBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
+  densityText: { color: '#fff', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
   dot: { fontSize: 13, color: '#d1d5db' },
   peopleCount: { fontSize: 13, color: '#374151' },
-  density: { fontSize: 12, color: '#6b7280', textTransform: 'capitalize' },
+
+  frameId: { fontSize: 12, color: '#6b7280', paddingHorizontal: 12, paddingBottom: 8 },
+  divider: { height: 1, backgroundColor: '#f3f4f6', marginHorizontal: 12 },
+  detectionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 12 },
+  objName: { fontSize: 13, color: '#111827' },
+  conf: { fontSize: 13, fontWeight: '500', color: '#059669' },
+  more: { fontSize: 12, color: '#9ca3af', paddingHorizontal: 12, paddingBottom: 10 },
 });

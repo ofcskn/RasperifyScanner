@@ -21,6 +21,7 @@ class Analysis(Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     raw_response: Mapped[str] = mapped_column(Text, nullable=False)
     environment_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    frame_thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     detections: Mapped[list["DetectionResult"]] = relationship(

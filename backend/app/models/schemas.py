@@ -54,6 +54,7 @@ class AnalysisResponse(BaseModel):
     metrics: list[MetricItem]
     raw_response: str
     environment_scan: Optional[EnvironmentScanSchema] = None
+    frame_thumbnail: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

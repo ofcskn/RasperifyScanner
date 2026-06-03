@@ -79,6 +79,7 @@ export interface AnalysisResult {
   detections: Array<{ object_name: string; confidence: number; bbox: object | null }>;
   metrics: Array<{ metric_name: string; value: number }>;
   environment_scan: EnvironmentScan | null;
+  frame_thumbnail: string | null;
   created_at: string;
 }
 

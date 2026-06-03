@@ -18,6 +18,8 @@ async def _migrate(conn) -> None:
     existing_cols = {row[1] for row in result.fetchall()}
     if "environment_json" not in existing_cols:
         await conn.execute(text("ALTER TABLE analyses ADD COLUMN environment_json JSON"))
+    if "frame_thumbnail" not in existing_cols:
+        await conn.execute(text("ALTER TABLE analyses ADD COLUMN frame_thumbnail TEXT"))
 
 
 async def init_db() -> None:

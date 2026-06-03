@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 _MOTION_THRESHOLD = float(os.getenv("MOTION_THRESHOLD", "5.0"))
 _MOTION_SIZE = (64, 64)
+_THUMB_SIZE = (320, 240)
+_THUMB_QUALITY = 55
+
+
+def _make_thumbnail(frame_base64: str) -> str:
+    from PIL import Image
+    img = Image.open(io.BytesIO(base64.b64decode(frame_base64))).convert("RGB")
+    img.thumbnail(_THUMB_SIZE, Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=_THUMB_QUALITY, optimize=True)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _frame_diff(prev_b64: str, curr_b64: str) -> float:
@@ -65,12 +76,19 @@ class AnalysisPipelineController:
         if result.environment_scan is not None:
             env_dict = dataclasses.asdict(result.environment_scan)
 
+        try:
+            thumbnail = _make_thumbnail(frame_base64)
+        except Exception as exc:
+            logger.warning("Thumbnail generation failed: %s", exc)
+            thumbnail = None
+
         async with AsyncSessionLocal() as db:
             analysis = Analysis(
                 frame_id=frame_id,
                 provider=result.provider,
                 raw_response=result.raw_response,
                 environment_json=env_dict,
+                frame_thumbnail=thumbnail,
             )
             db.add(analysis)
             await db.flush()
@@ -95,6 +113,7 @@ class AnalysisPipelineController:
             "frame_id": frame_id,
             "provider": result.provider,
             "motion_detected": motion_detected,
+            "frame_thumbnail": thumbnail,
             "detections": [
                 {"object_name": d.object_name, "confidence": d.confidence, "bbox": d.bbox}
                 for d in result.detections

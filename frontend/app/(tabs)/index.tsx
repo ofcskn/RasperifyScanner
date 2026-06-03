@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator,
-  TouchableOpacity, Alert,
+  TouchableOpacity, Alert, Image,
 } from 'react-native';
 import { wsService } from '../../services/websocket';
 import { fetchHealth, triggerAnalysis, EnvironmentScan } from '../../services/api';
@@ -11,6 +11,7 @@ interface AnalysisEvent {
   id: number;
   frame_id: string;
   provider: string;
+  frame_thumbnail: string | null;
   detections: Array<{ object_name: string; confidence: number }>;
   metrics: Record<string, number>;
   environment_scan: EnvironmentScan | null;
@@ -156,6 +157,19 @@ export default function DashboardScreen() {
       {/* Current Environment */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Current Environment</Text>
+
+        {latest?.frame_thumbnail ? (
+          <Image
+            source={{ uri: `data:image/jpeg;base64,${latest.frame_thumbnail}` }}
+            style={styles.frameImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.framePlaceholder}>
+            <Text style={styles.framePlaceholderText}>No frame captured yet</Text>
+          </View>
+        )}
+
         {env ? (
           <>
             <View style={styles.envHeader}>
@@ -166,22 +180,15 @@ export default function DashboardScreen() {
                   <Text style={styles.densityText}>{env.crowd_density.toUpperCase()}</Text>
                 </View>
               </View>
+              <View style={styles.peopleChip}>
+                <Text style={styles.peopleNumber}>{env.people_count}</Text>
+                <Text style={styles.peopleLabel}>people</Text>
+              </View>
             </View>
-
-            <View style={styles.peopleCount}>
-              <Text style={styles.peopleNumber}>{env.people_count}</Text>
-              <Text style={styles.peopleLabel}>people detected</Text>
-            </View>
-
-            <View style={styles.divider} />
 
             <View style={styles.ambientRow}>
-              <Text style={styles.ambientItem}>
-                💡 {env.ambient_conditions.lighting}
-              </Text>
-              <Text style={styles.ambientItem}>
-                🕐 {env.ambient_conditions.estimated_time}
-              </Text>
+              <Text style={styles.ambientItem}>💡 {env.ambient_conditions.lighting}</Text>
+              <Text style={styles.ambientItem}>🕐 {env.ambient_conditions.estimated_time}</Text>
             </View>
 
             {env.notable_observations.length > 0 && (
@@ -209,7 +216,7 @@ export default function DashboardScreen() {
           </>
         ) : (
           <Text style={styles.empty}>
-            Waiting for environment scan…{'\n'}Use "Run Scan Now" or configure a schedule in Settings.
+            Use "Run Scan Now" or configure a schedule in Settings.
           </Text>
         )}
       </View>
@@ -244,18 +251,20 @@ const styles = StyleSheet.create({
   scanBtnDisabled: { backgroundColor: '#93c5fd' },
   scanBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-  envHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  envIcon: { fontSize: 40, marginRight: 14 },
+  frameImage: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#0f172a' },
+  framePlaceholder: { width: '100%', height: 200, borderRadius: 8, marginBottom: 14, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' },
+  framePlaceholderText: { color: '#475569', fontSize: 13 },
+
+  envHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  envIcon: { fontSize: 32, marginRight: 12 },
   envHeaderText: { flex: 1 },
-  envType: { fontSize: 18, fontWeight: '800', color: '#111827', letterSpacing: 1 },
+  envType: { fontSize: 16, fontWeight: '800', color: '#111827', letterSpacing: 0.5 },
   densityBadge: { marginTop: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
   densityText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
-  peopleCount: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 12 },
-  peopleNumber: { fontSize: 48, fontWeight: '900', color: '#2563eb', lineHeight: 52 },
-  peopleLabel: { fontSize: 16, color: '#6b7280', marginLeft: 8 },
-
-  divider: { height: 1, backgroundColor: '#f3f4f6', marginBottom: 10 },
+  peopleChip: { alignItems: 'center', backgroundColor: '#eff6ff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+  peopleNumber: { fontSize: 26, fontWeight: '900', color: '#2563eb', lineHeight: 30 },
+  peopleLabel: { fontSize: 10, color: '#6b7280', fontWeight: '600' },
 
   ambientRow: { flexDirection: 'row', gap: 16, marginBottom: 10 },
   ambientItem: { fontSize: 13, color: '#374151' },
