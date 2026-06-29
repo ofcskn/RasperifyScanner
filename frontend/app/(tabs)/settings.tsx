@@ -7,6 +7,7 @@ import {
   fetchSchedules, createSchedule, toggleSchedule, deleteSchedule,
   Schedule, fetchHealth,
 } from '../../services/api';
+import ConfigPanel from '../../components/ConfigPanel';
 
 export default function SettingsScreen() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -112,6 +113,7 @@ export default function SettingsScreen() {
             data={schedules}
             keyExtractor={(s) => String(s.id)}
             renderItem={renderSchedule}
+            ListHeaderComponent={<View style={{ marginBottom: 12 }}><ConfigPanel /></View>}
             ListEmptyComponent={<Text style={styles.empty}>No schedules configured.</Text>}
           />
         )}

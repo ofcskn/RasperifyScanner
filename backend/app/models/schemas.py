@@ -55,6 +55,8 @@ class AnalysisResponse(BaseModel):
     raw_response: str
     environment_scan: Optional[EnvironmentScanSchema] = None
     frame_thumbnail: Optional[str] = None
+    people_count_live: Optional[int] = None
+    people_count_cumulative: Optional[int] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -107,11 +109,76 @@ class AdapterStatus(BaseModel):
     ip: Optional[str] = None
 
 
+class DetectorStatus(BaseModel):
+    backend: str
+    available: bool
+    enabled: bool
+
+
+class OllamaStatus(BaseModel):
+    enabled: bool
+    reachable: bool
+    model: str
+    model_present: bool
+    host: str
+
+
 class HealthResponse(BaseModel):
     status: str
     camera_connected: bool
+    camera_source: Optional[str] = None
     active_adapter: Optional[str]
     adapters: list[AdapterStatus]
     cpu_percent: Optional[float] = None
     memory_percent: Optional[float] = None
     uptime_seconds: Optional[float] = None
+    detector: Optional[DetectorStatus] = None
+    ollama: Optional[OllamaStatus] = None
+
+
+# --- Runtime configuration ---
+
+class ConfigResponse(BaseModel):
+    camera_source: str
+    detection_enabled: bool
+    detection_conf_threshold: float
+    detection_iou_threshold: float
+    counting_min_hits: int
+    counting_person_alert_threshold: int
+    ollama_enabled: bool
+    ollama_model: str
+    analysis_default_interval_seconds: int
+    allow_cloud: bool
+    store_frames: bool
+
+
+class ConfigUpdateRequest(BaseModel):
+    detection_enabled: Optional[bool] = None
+    detection_conf_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    detection_iou_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    counting_min_hits: Optional[int] = Field(None, ge=1)
+    counting_person_alert_threshold: Optional[int] = Field(None, ge=0)
+    ollama_model: Optional[str] = None
+    analysis_default_interval_seconds: Optional[int] = Field(None, ge=5)
+    allow_cloud: Optional[bool] = None
+    store_frames: Optional[bool] = None
+
+
+# --- Events / logs ---
+
+class EventResponse(BaseModel):
+    id: int
+    kind: str
+    severity: str
+    message: str
+    data_json: Optional[dict] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class EventListResponse(BaseModel):
+    items: list[EventResponse]
+    total: int
+    page: int
+    page_size: int

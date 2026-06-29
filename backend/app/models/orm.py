@@ -22,6 +22,8 @@ class Analysis(Base):
     raw_response: Mapped[str] = mapped_column(Text, nullable=False)
     environment_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     frame_thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    people_count_live: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    people_count_cumulative: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     detections: Mapped[list["DetectionResult"]] = relationship(
@@ -53,6 +55,20 @@ class IntensityMetric(Base):
     value: Mapped[float] = mapped_column(Float, nullable=False)
 
     analysis: Mapped["Analysis"] = relationship("Analysis", back_populates="metrics")
+
+
+class Event(Base):
+    """Operational events / logs: count thresholds, camera/model/service failures
+    and recoveries. Powers the frontend Events/Logs view."""
+
+    __tablename__ = "events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="info")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    data_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 
 class Schedule(Base):

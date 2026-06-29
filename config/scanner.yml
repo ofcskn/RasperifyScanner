@@ -1,0 +1,41 @@
+# RasperifyScanner — local scanner configuration.
+#
+# Precedence: environment variables / .env override these values, which override
+# the code defaults in backend/app/config/settings.py. Keys here map 1:1 to
+# Settings fields (flat, snake_case). Edit freely; restart the backend to apply,
+# or change most values live from the app's Settings screen (PATCH /api/v1/config).
+
+# --- Camera source ---
+camera_source: picamera2          # picamera2 | usb:/dev/video0 | rtsp://host:554/stream
+camera_resolution_width: 1280
+camera_resolution_height: 720
+camera_jpeg_quality: 85
+
+# --- Stage 1: on-device object/person detection ---
+detection_enabled: true
+detection_backend: onnx-yolo
+detection_model_path: models/yolo.onnx
+detection_conf_threshold: 0.35
+detection_iou_threshold: 0.45
+detection_input_size: 640
+detection_target_labels: []       # [] = all COCO classes; e.g. ["person"] to count people only
+detection_frame_budget_seconds: 1.0   # if a frame takes longer, skip frames (graceful degradation)
+
+# --- People counting rules ---
+counting_min_hits: 3              # frames a track must persist before it counts as a unique person
+counting_iou_match: 0.3          # IoU to associate a detection with an existing track
+counting_max_age: 15             # frames a track survives unseen before eviction
+counting_person_alert_threshold: 0   # >0 raises an event when the live count exceeds this
+
+# --- Stage 2: local Ollama vision analysis ---
+ollama_enabled: true
+ollama_host: http://localhost:11434
+ollama_model: moondream          # tiny vision model suited to a Pi; e.g. llava, llava-llama3
+ollama_timeout_seconds: 120.0
+ai_primary_provider: ollama
+analysis_default_interval_seconds: 30   # seconds between scheduled Stage-2 analyses
+
+# --- Privacy / storage ---
+allow_cloud: false               # when false, Gemini/OpenAI are never called (fully local)
+store_frames: true               # persist frame thumbnails with each analysis
+storage_path: ./data

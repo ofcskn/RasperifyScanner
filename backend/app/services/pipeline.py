@@ -10,12 +10,13 @@ import logging
 import os
 import uuid
 
+from app.config.settings import settings
 from app.models.database import AsyncSessionLocal
 from app.models.orm import Analysis, DetectionResult, IntensityMetric
 from app.services.ai.multi_provider import multi_ai_service
-from app.services.ai.prompts import ENVIRONMENT_SCAN_PROMPT
 from app.services.camera import camera_service
 from app.services.connection import connection_service
+from app.services.detection.service import detection_service
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +71,21 @@ class AnalysisPipelineController:
         if not motion_detected:
             return {"event": "no_motion", "frame_id": frame_id, "motion_detected": False}
 
-        result = await multi_ai_service.analyze(frame_base64, prompt or ENVIRONMENT_SCAN_PROMPT)
+        # Stage 1: on-device YOLO snapshot (real boxes + per-frame person count),
+        # without advancing the live tracker. Stage 2: local Ollama scene analysis.
+        snapshot = detection_service.snapshot(frame_base64)
+        result = await multi_ai_service.analyze(frame_base64, prompt)
 
         env_dict = None
         if result.environment_scan is not None:
             env_dict = dataclasses.asdict(result.environment_scan)
 
+        people_live = snapshot["people_live"]
+        people_cumulative = snapshot["people_cumulative"]
+        det_list = snapshot["detections"]
+
         try:
-            thumbnail = _make_thumbnail(frame_base64)
+            thumbnail = _make_thumbnail(frame_base64) if settings.store_frames else None
         except Exception as exc:
             logger.warning("Thumbnail generation failed: %s", exc)
             thumbnail = None
@@ -89,16 +97,24 @@ class AnalysisPipelineController:
                 raw_response=result.raw_response,
                 environment_json=env_dict,
                 frame_thumbnail=thumbnail,
+                people_count_live=people_live,
+                people_count_cumulative=people_cumulative,
             )
             db.add(analysis)
             await db.flush()
 
-            for det in result.detections:
+            # Prefer the on-device detections (they carry real bounding boxes);
+            # fall back to any detections the provider returned.
+            stored_dets = det_list or [
+                {"label": d.object_name, "confidence": d.confidence, "bbox": d.bbox}
+                for d in result.detections
+            ]
+            for det in stored_dets:
                 db.add(DetectionResult(
                     analysis_id=analysis.id,
-                    object_name=det.object_name,
-                    confidence=det.confidence,
-                    bbox_json=json.dumps(det.bbox) if det.bbox else None,
+                    object_name=det.get("label", "unknown"),
+                    confidence=det.get("confidence", 0.0),
+                    bbox_json=json.dumps(det["bbox"]) if det.get("bbox") else None,
                 ))
             for name, value in result.metrics.items():
                 db.add(IntensityMetric(analysis_id=analysis.id, metric_name=name, value=value))
@@ -114,14 +130,22 @@ class AnalysisPipelineController:
             "provider": result.provider,
             "motion_detected": motion_detected,
             "frame_thumbnail": thumbnail,
-            "detections": [
-                {"object_name": d.object_name, "confidence": d.confidence, "bbox": d.bbox}
-                for d in result.detections
-            ],
+            "detections": det_list,
+            "counts": {"live": people_live, "cumulative": people_cumulative},
             "metrics": result.metrics,
             "environment_scan": env_dict,
         }
         await connection_service.broadcast(broadcast_payload)
+
+        # Optional alert event when the live person count exceeds the threshold.
+        if settings.counting_person_alert_threshold and people_live > settings.counting_person_alert_threshold:
+            from app.services.events import record_event
+            await record_event(
+                kind="person_threshold",
+                severity="warning",
+                message=f"{people_live} people detected (threshold {settings.counting_person_alert_threshold})",
+                data={"people_count": people_live, "threshold": settings.counting_person_alert_threshold, "frame_id": frame_id},
+            )
 
         if schedule_id is not None:
             from app.services.scheduler import scheduler_service

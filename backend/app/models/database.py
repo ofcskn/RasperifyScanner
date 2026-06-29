@@ -20,6 +20,10 @@ async def _migrate(conn) -> None:
         await conn.execute(text("ALTER TABLE analyses ADD COLUMN environment_json JSON"))
     if "frame_thumbnail" not in existing_cols:
         await conn.execute(text("ALTER TABLE analyses ADD COLUMN frame_thumbnail TEXT"))
+    if "people_count_live" not in existing_cols:
+        await conn.execute(text("ALTER TABLE analyses ADD COLUMN people_count_live INTEGER"))
+    if "people_count_cumulative" not in existing_cols:
+        await conn.execute(text("ALTER TABLE analyses ADD COLUMN people_count_cumulative INTEGER"))
 
 
 async def init_db() -> None:

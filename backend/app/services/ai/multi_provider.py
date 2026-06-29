@@ -6,8 +6,7 @@ import time
 
 from app.config.settings import settings
 from app.services.ai.base import AIProvider, AnalysisResult
-from app.services.ai.gemini import GeminiProvider
-from app.services.ai.openai_provider import OpenAIProvider
+from app.services.ai.ollama import OllamaProvider
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +16,46 @@ _RATE_LIMIT_COOLDOWN = 60.0
 
 class MultiAIProviderService:
     def __init__(self) -> None:
-        self._providers: dict[str, AIProvider] = {
-            "gemini": GeminiProvider(),
-            "openai": OpenAIProvider(),
-        }
-        self._primary = settings.ai_primary_provider
-        self._fallback = "openai" if self._primary == "gemini" else "gemini"
+        self._providers: dict[str, AIProvider] = {}
+        self._order: list[str] = []
+        self._build_providers()
         self._cache: dict[str, tuple[float, AnalysisResult]] = {}
         self._rate_limited_until: dict[str, float] = {}
+
+    def _build_providers(self) -> None:
+        """Register available providers. Ollama is local-first; cloud is opt-in.
+
+        Cloud providers (Gemini/OpenAI) are only constructed when allow_cloud is
+        true AND their API key is present, so a default install never reaches out
+        to the network and never imports the cloud SDKs.
+        """
+        providers: dict[str, AIProvider] = {}
+        if settings.ollama_enabled:
+            providers["ollama"] = OllamaProvider()
+        if settings.allow_cloud and settings.gemini_api_key:
+            from app.services.ai.gemini import GeminiProvider
+            providers["gemini"] = GeminiProvider()
+        if settings.allow_cloud and settings.openai_api_key:
+            from app.services.ai.openai_provider import OpenAIProvider
+            providers["openai"] = OpenAIProvider()
+
+        if not providers:
+            # Keep Ollama registered even if disabled, so errors are actionable
+            # rather than a bare "no providers" at call time.
+            providers["ollama"] = OllamaProvider()
+
+        # Try the configured primary first, then any remaining providers.
+        order = [settings.ai_primary_provider] if settings.ai_primary_provider in providers else []
+        order += [name for name in providers if name not in order]
+
+        self._providers = providers
+        self._order = order
+        logger.info("AI providers registered: %s (order: %s)", list(providers), order)
+
+    def reload(self) -> None:
+        """Rebuild providers after a runtime config change (e.g. PATCH /config)."""
+        self._build_providers()
+        self._cache.clear()
 
     def _cache_key(self, frame_base64: str, prompt: str | None) -> str:
         h = hashlib.sha256((frame_base64[:512] + str(prompt)).encode()).hexdigest()[:16]
@@ -48,7 +79,7 @@ class MultiAIProviderService:
             logger.debug("AI cache hit for key %s", key)
             return cached
 
-        for provider_name in (self._primary, self._fallback):
+        for provider_name in self._order:
             cooldown_until = self._rate_limited_until.get(provider_name, 0)
             if time.monotonic() < cooldown_until:
                 remaining = cooldown_until - time.monotonic()

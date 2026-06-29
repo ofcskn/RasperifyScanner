@@ -30,12 +30,11 @@ async def test_multi_provider_falls_back_to_openai():
     fake_result = AnalysisResult(provider="openai", raw_response="{}", detections=[], metrics={})
     service = MultiAIProviderService.__new__(MultiAIProviderService)
     service._cache = {}
+    service._rate_limited_until = {}
     gemini_mock = AsyncMock(side_effect=RuntimeError("Gemini down"))
     openai_mock = AsyncMock(return_value=fake_result)
     service._providers = {"gemini": MagicMock(analyze=gemini_mock, name="gemini"),
                           "openai": MagicMock(analyze=openai_mock, name="openai")}
-    service._primary = "gemini"
-    service._fallback = "openai"
-    from app.config.settings import settings
+    service._order = ["gemini", "openai"]
     result = await service.analyze("base64data")
     assert result.provider == "openai"

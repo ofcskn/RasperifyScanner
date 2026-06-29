@@ -31,6 +31,8 @@ def _to_response(analysis: Analysis) -> AnalysisResponse:
         raw_response=analysis.raw_response,
         environment_scan=env,
         frame_thumbnail=analysis.frame_thumbnail,
+        people_count_live=analysis.people_count_live,
+        people_count_cumulative=analysis.people_count_cumulative,
         created_at=analysis.created_at,
         detections=[
             DetectionItem(

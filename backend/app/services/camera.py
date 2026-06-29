@@ -38,19 +38,26 @@ class CameraService:
         self._jpeg_quality: int = settings.camera_jpeg_quality
         self._capture_ok: bool = False
 
-        picamera_available = self._try_import_picamera()
+        self._source = settings.camera_source
+        self._capture = None  # OpenCV VideoCapture handle, when used
+        # Mode is chosen from camera_source: picamera2 (CSI), opencv (USB/RTSP/HTTP),
+        # or mock. Mock wins when forced or when the chosen backend is unavailable.
         if settings.camera_mock:
-            self._mock = True
+            self._mode = "mock"
             logger.info("CameraService: mock mode enabled via CAMERA_MOCK setting")
-        elif not picamera_available:
-            self._mock = True
+        elif self._is_opencv_source(self._source):
+            self._mode = "opencv" if self._try_import_cv2() else "mock"
+            if self._mode == "mock":
+                logger.warning("CameraService: opencv source '%s' but cv2 unavailable — mock mode", self._source)
+        elif self._try_import_picamera():
+            self._mode = "picamera2"
+        else:
+            self._mode = "mock"
             logger.warning(
                 "CameraService: picamera2 not importable — falling back to mock mode. "
-                "Install picamera2 (pip install picamera2) and ensure libcamera bindings "
-                "are available (python3-libcamera apt package + PYTHONPATH)."
+                "Install picamera2 and libcamera bindings, or set CAMERA_SOURCE to a USB/RTSP source."
             )
-        else:
-            self._mock = False
+        self._mock = self._mode == "mock"
 
     def set_quality(self, quality: int) -> None:
         self._jpeg_quality = max(10, min(95, quality))
@@ -65,9 +72,34 @@ class CameraService:
         except ImportError:
             return False
 
+    @staticmethod
+    def _try_import_cv2() -> bool:
+        try:
+            import cv2  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    @staticmethod
+    def _is_opencv_source(source: str) -> bool:
+        s = (source or "").lower()
+        return s.startswith(("usb:", "rtsp://", "http://", "https://", "/dev/video")) or s.isdigit()
+
+    def _cv2_target(self):
+        """Resolve camera_source into an OpenCV VideoCapture target (index or URL)."""
+        s = self._source
+        if s.lower().startswith("usb:"):
+            rest = s.split(":", 1)[1]
+            return int(rest) if rest.isdigit() else rest
+        if s.isdigit():
+            return int(s)
+        return s  # rtsp:// | http:// | /dev/videoN
+
     # --- camera lifecycle ---
 
     def _open_camera(self):
+        if self._mode == "opencv":
+            return self._open_opencv()
         from picamera2 import Picamera2
         cam = Picamera2()
         # Video configuration keeps the sensor in continuous capture mode.
@@ -86,13 +118,41 @@ class CameraService:
 
     # --- capture helpers ---
 
+    def _open_opencv(self):
+        import cv2
+        target = self._cv2_target()
+        cap = cv2.VideoCapture(target)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_resolution_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.camera_resolution_height)
+        if not cap.isOpened():
+            raise RuntimeError(f"OpenCV could not open camera source '{self._source}'")
+        self._capture = cap
+        time.sleep(0.5)  # let the stream/sensor settle
+        return cap
+
     def _capture_real(self) -> bytes:
         from PIL import Image
+        if self._mode == "opencv":
+            return self._capture_opencv()
         if self._camera is None:
             raise RuntimeError("Camera is not open")
         # capture_array returns (H, W, 3) uint8 in RGB order for RGB888 format.
         array = self._camera.capture_array("main")
         img = Image.fromarray(array)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=self._jpeg_quality)
+        return buf.getvalue()
+
+    def _capture_opencv(self) -> bytes:
+        import cv2
+        from PIL import Image
+        if self._capture is None:
+            raise RuntimeError("OpenCV capture is not open")
+        ok, frame_bgr = self._capture.read()
+        if not ok or frame_bgr is None:
+            raise RuntimeError("OpenCV frame read failed (camera disconnected?)")
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(frame_rgb)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=self._jpeg_quality)
         return buf.getvalue()
@@ -156,14 +216,23 @@ class CameraService:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
-        self._running = False
-        if self._camera:
+    def _close_handle(self) -> None:
+        if self._mode == "opencv" and self._capture is not None:
+            try:
+                self._capture.release()
+            except Exception:
+                pass
+            self._capture = None
+        if self._camera is not None and self._mode != "opencv":
             try:
                 self._camera.stop()
             except Exception:
                 pass
-            self._camera = None
+        self._camera = None
+
+    def stop(self) -> None:
+        self._running = False
+        self._close_handle()
         self._capture_ok = False
 
     def capture_now(self) -> CapturedFrame:
@@ -173,19 +242,11 @@ class CameraService:
         opens a temporary camera session, captures one frame, and closes it.
         """
         if not self._mock and self._camera is None:
-            cam = None
             try:
-                cam = self._open_camera()
-                self._camera = cam
-                frame = self._capture_one()
-                return frame
+                self._open_camera()
+                return self._capture_one()
             finally:
-                if cam is not None:
-                    try:
-                        cam.stop()
-                    except Exception:
-                        pass
-                self._camera = None
+                self._close_handle()
         return self._capture_one()
 
     def get_latest_frame(self) -> CapturedFrame | None:

@@ -154,3 +154,87 @@ export async function disconnectCamera(): Promise<{ connected: boolean }> {
   const { data } = await api.post<{ connected: boolean }>('/camera/disconnect');
   return data;
 }
+
+// --- Detection / counts / status (Stage 1 + Stage 2) ---
+
+export interface Detection {
+  label: string;
+  confidence: number;
+  bbox: [number, number, number, number]; // normalized x1,y1,x2,y2
+  track_id: number | null;
+}
+
+export interface Counts {
+  live: number;
+  cumulative: number;
+}
+
+export interface DetectorStatus {
+  backend: string;
+  available: boolean;
+  enabled: boolean;
+}
+
+export interface OllamaStatus {
+  enabled: boolean;
+  reachable: boolean;
+  model: string;
+  model_present: boolean;
+  host: string;
+}
+
+export interface HealthData {
+  status: string;
+  camera_connected: boolean;
+  camera_source: string | null;
+  active_adapter: string | null;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  uptime_seconds: number | null;
+  detector?: DetectorStatus;
+  ollama?: OllamaStatus;
+}
+
+// --- Runtime config ---
+
+export interface ScannerConfig {
+  camera_source: string;
+  detection_enabled: boolean;
+  detection_conf_threshold: number;
+  detection_iou_threshold: number;
+  counting_min_hits: number;
+  counting_person_alert_threshold: number;
+  ollama_enabled: boolean;
+  ollama_model: string;
+  analysis_default_interval_seconds: number;
+  allow_cloud: boolean;
+  store_frames: boolean;
+}
+
+export async function fetchConfig(): Promise<ScannerConfig> {
+  const { data } = await api.get<ScannerConfig>('/config');
+  return data;
+}
+
+export async function updateConfig(patch: Partial<ScannerConfig>): Promise<ScannerConfig> {
+  const { data } = await api.patch<ScannerConfig>('/config', patch);
+  return data;
+}
+
+// --- Events / logs ---
+
+export interface EventItem {
+  id: number;
+  kind: string;
+  severity: string;
+  message: string;
+  data_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export async function fetchEvents(page = 1, pageSize = 30, kind?: string) {
+  const { data } = await api.get<{ items: EventItem[]; total: number }>('/events', {
+    params: { page, page_size: pageSize, ...(kind && { kind }) },
+  });
+  return data;
+}

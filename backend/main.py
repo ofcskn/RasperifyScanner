@@ -9,14 +9,16 @@ from sqlalchemy import select
 
 from app.models.database import init_db, AsyncSessionLocal
 from app.models.orm import Schedule
+from app.config.settings import settings
 from app.services.camera import camera_service
 from app.services.connection import connection_service
+from app.services.detection.service import detection_service
 from app.services.scheduler import scheduler_service
 from app.services.pipeline import scheduled_pipeline_trigger
 from app.services.scheduler import set_pipeline_trigger
 from app.utils.image import resize_and_encode
 
-from app.api.routes import auth, analyze, results, schedules, health, camera
+from app.api.routes import auth, analyze, results, schedules, health, camera, config, events
 from app.api import websocket
 
 logger = logging.getLogger(__name__)
@@ -51,12 +53,28 @@ async def _live_frame_broadcaster() -> None:
                             b, _LIVE_THUMB_WIDTH, _LIVE_THUMB_HEIGHT, _LIVE_THUMB_QUALITY
                         ),
                     )
+                    # Stage 1: on-device detection + counting on the full-res frame.
+                    # Runs in the executor (CPU-bound) so the event loop stays free.
+                    det = await loop.run_in_executor(
+                        None, detection_service.process, frame.frame_base64
+                    )
                     await connection_service.broadcast({
                         "event": "live_frame",
                         "frame_id": frame.frame_id,
                         "frame_thumbnail": thumb,
+                        "detections": det["detections"],
+                        "counts": det["counts"],
+                        "detector": det.get("detector"),
+                        "degraded": det.get("degraded", False),
+                        "frame_size": {
+                            "width": settings.camera_resolution_width,
+                            "height": settings.camera_resolution_height,
+                        },
                     })
-                    logger.debug("live_frame broadcast: frame_id=%s clients=%d", frame.frame_id, clients)
+                    logger.debug(
+                        "live_frame broadcast: frame_id=%s clients=%d people=%s",
+                        frame.frame_id, clients, det["counts"],
+                    )
                 else:
                     logger.debug("live_frame: camera running but queue empty (camera still warming up?)")
             elif running and clients == 0:
@@ -122,4 +140,6 @@ app.include_router(results.router, prefix=api_prefix)
 app.include_router(schedules.router, prefix=api_prefix)
 app.include_router(health.router, prefix=api_prefix)
 app.include_router(camera.router, prefix=api_prefix)
+app.include_router(config.router, prefix=api_prefix)
+app.include_router(events.router, prefix=api_prefix)
 app.include_router(websocket.router)
