@@ -16,6 +16,22 @@ export function clearTokens() {
   refreshToken = null;
 }
 
+/**
+ * Bridge so the auth layer (AuthContext) can react to token lifecycle events
+ * happening inside the axios interceptor — persisting rotated tokens and
+ * forcing a logout when the session can no longer be refreshed.
+ */
+export interface AuthEventHandlers {
+  onTokensRefreshed?: (access: string, refresh: string) => void;
+  onAuthExpired?: () => void;
+}
+
+let authEvents: AuthEventHandlers = {};
+
+export function setAuthEvents(events: AuthEventHandlers) {
+  authEvents = events;
+}
+
 const api: AxiosInstance = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -34,10 +50,13 @@ api.interceptors.response.use(
       try {
         const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
         setTokens(data.access_token, data.refresh_token);
+        authEvents.onTokensRefreshed?.(data.access_token, data.refresh_token);
         original.headers.Authorization = `Bearer ${data.access_token}`;
         return api(original);
       } catch {
+        // Refresh token is invalid/expired — the session is over. Force logout.
         clearTokens();
+        authEvents.onAuthExpired?.();
       }
     }
     return Promise.reject(error);

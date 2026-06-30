@@ -31,7 +31,12 @@ counting_person_alert_threshold: 0   # >0 raises an event when the live count ex
 ollama_enabled: true
 ollama_host: http://localhost:11434
 ollama_model: moondream          # tiny vision model suited to a Pi; e.g. llava, llava-llama3
-ollama_timeout_seconds: 120.0
+# A single warm moondream inference on a Pi 4 (CPU only) measures ~130s — almost
+# all of it the vision encoder. 120s tripped a timeout on every call; 300s leaves
+# headroom for cold loads and contention. Lower it if you move to faster hardware.
+ollama_timeout_seconds: 300.0
+ollama_keep_alive: 30m           # keep the model resident between analyses (avoids reloads/OOM)
+ollama_num_predict: 256          # cap generated tokens so a runaway reply can't exceed the timeout
 ai_primary_provider: ollama
 analysis_default_interval_seconds: 30   # seconds between scheduled Stage-2 analyses
 

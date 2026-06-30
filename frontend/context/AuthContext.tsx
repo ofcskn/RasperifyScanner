@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login as loginAPI, setTokens, clearTokens } from '../services/api';
+import { login as loginAPI, setTokens, clearTokens, setAuthEvents } from '../services/api';
 
 const ACCESS_KEY = 'rasperify_access_token';
 const REFRESH_KEY = 'rasperify_refresh_token';
@@ -43,6 +43,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
     restore();
+  }, []);
+
+  // Bridge the axios interceptor's token lifecycle into auth state:
+  //  - persist rotated tokens so a restart keeps the (rolling 30-day) session
+  //  - force a logout when the refresh token is rejected (expired/invalid)
+  useEffect(() => {
+    setAuthEvents({
+      onTokensRefreshed: (access, refresh) => {
+        AsyncStorage.multiSet([
+          [ACCESS_KEY, access],
+          [REFRESH_KEY, refresh],
+        ]).catch(() => {
+          // storage unavailable — in-memory tokens still work for this session
+        });
+      },
+      onAuthExpired: () => {
+        AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY, USERNAME_KEY]).catch(() => {});
+        setIsAuthenticated(false);
+        setUsername(null);
+      },
+    });
+    return () => setAuthEvents({});
   }, []);
 
   const login = useCallback(async (user: string, password: string) => {

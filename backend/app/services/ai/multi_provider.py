@@ -100,11 +100,22 @@ class MultiAIProviderService:
                         )
                         break
                     wait = settings.ai_retry_backoff_base ** attempt
-                    logger.warning("Provider %s attempt %d failed: %s — retrying in %.1fs", provider_name, attempt + 1, exc, wait)
+                    # repr() not str(): httpx timeout exceptions stringify to ''
+                    # which produced uninformative "failed: " lines in the logs.
+                    detail = str(exc) or repr(exc)
+                    logger.warning("Provider %s attempt %d/%d failed: %s — retrying in %.1fs", provider_name, attempt + 1, settings.ai_retry_max, detail, wait)
                     if attempt < settings.ai_retry_max - 1:
                         await asyncio.sleep(wait)
             else:
-                logger.error("Provider %s exhausted retries, switching to fallback", provider_name)
+                remaining = [n for n in self._order if n != provider_name]
+                if remaining:
+                    logger.error("Provider %s exhausted retries, trying next: %s", provider_name, remaining[0])
+                else:
+                    logger.error(
+                        "Provider %s exhausted retries and no fallback is configured. "
+                        "Ensure Ollama is running (systemctl start ollama) or set allow_cloud=true with an API key.",
+                        provider_name,
+                    )
         raise RuntimeError("All AI providers exhausted")
 
 

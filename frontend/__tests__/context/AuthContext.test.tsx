@@ -8,6 +8,7 @@ jest.mock('../../services/api', () => ({
   login: jest.fn(),
   setTokens: jest.fn(),
   clearTokens: jest.fn(),
+  setAuthEvents: jest.fn(),
 }));
 
 const { login: mockLogin, setTokens: mockSetTokens } = require('../../services/api');

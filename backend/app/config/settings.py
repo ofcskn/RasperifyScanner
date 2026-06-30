@@ -30,7 +30,15 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "moondream"
     ollama_enabled: bool = True
-    ollama_timeout_seconds: float = 120.0
+    # On a CPU-only Pi 4 the vision encoder (image -> ~730 prompt tokens) is the
+    # bottleneck and a single warm inference measures ~130s; the old 120s ceiling
+    # tripped an httpx ReadTimeout *every* call. Give real headroom.
+    ollama_timeout_seconds: float = 300.0
+    # Keep the model resident between analyses so we pay the ~1.3GB load cost once
+    # instead of on every call (a reload can also OOM under memory pressure).
+    ollama_keep_alive: str = "30m"
+    # Cap generation so a runaway/looping response can never blow the timeout.
+    ollama_num_predict: int = 256
 
     # Cloud (optional, off by default for privacy)
     allow_cloud: bool = False
@@ -41,11 +49,15 @@ class Settings(BaseSettings):
     detection_enabled: bool = True
     detection_backend: Literal["onnx-yolo"] = "onnx-yolo"
     detection_model_path: str = "models/yolo.onnx"
-    detection_conf_threshold: float = 0.35
+    detection_conf_threshold: float = 0.45  # higher = fewer low-confidence misclassifications
     detection_iou_threshold: float = 0.45
     detection_input_size: int = 640
     detection_target_labels: list[str] = []  # empty = all COCO classes
     detection_frame_budget_seconds: float = 1.0  # over budget -> skip frames (degrade)
+    # ONNX Runtime intra-op thread count. 0 = auto (leave 1 core free for the
+    # capture thread + event loop). Capping this stops YOLO inference from
+    # pinning every Pi core and freezing the live video.
+    detection_num_threads: int = 0
 
     # --- People counting ---
     counting_min_hits: int = 3        # frames a track must persist before counting
@@ -57,7 +69,7 @@ class Settings(BaseSettings):
     secret_key: str = "CHANGE_THIS_IN_PRODUCTION"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 7
+    refresh_token_expire_days: int = 30
 
     # Default admin user seeded on first run (leave blank to skip seeding)
     default_username: str = ""
