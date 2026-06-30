@@ -18,5 +18,7 @@ def _require_auth(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
 
 @router.post("", status_code=202)
 async def submit_analysis(payload: AnalyzeRequest, _: dict = Depends(_require_auth)):
-    result = await pipeline.run(frame_base64=payload.frame_base64, prompt=payload.prompt)
+    # Manual scans bypass the motion gate so an explicit user request always
+    # yields a persisted, broadcast result — even when the scene is static.
+    result = await pipeline.run(frame_base64=payload.frame_base64, prompt=payload.prompt, force=True)
     return result

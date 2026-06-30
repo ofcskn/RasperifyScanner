@@ -48,8 +48,14 @@ class AnalysisPipelineController:
     def __init__(self) -> None:
         self._last_frame_b64: str | None = None
 
-    async def run(self, frame_base64: str | None = None, prompt: str | None = None, schedule_id: int | None = None) -> dict:
-        """Capture (or accept) a frame, analyze, persist, and broadcast."""
+    async def run(self, frame_base64: str | None = None, prompt: str | None = None, schedule_id: int | None = None, force: bool = False) -> dict:
+        """Capture (or accept) a frame, analyze, persist, and broadcast.
+
+        ``force`` bypasses the motion gate. Manual "Run Scan Now" requests set
+        it so an explicit user action always produces (and persists) a result,
+        even on a static scene. Scheduled/automated runs leave it ``False`` so
+        the gate still skips redundant analysis when nothing changed.
+        """
         if frame_base64 is None:
             frame = camera_service.capture_now()
             frame_id = frame.frame_id
@@ -58,7 +64,7 @@ class AnalysisPipelineController:
             frame_id = str(uuid.uuid4())
 
         motion_detected = True
-        if self._last_frame_b64 is not None:
+        if not force and self._last_frame_b64 is not None:
             try:
                 diff = _frame_diff(self._last_frame_b64, frame_base64)
                 if diff < _MOTION_THRESHOLD:

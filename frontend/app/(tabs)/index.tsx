@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert, Image,
 } from 'react-native';
 import { wsService } from '../../services/websocket';
-import { fetchHealth, triggerAnalysis, EnvironmentScan } from '../../services/api';
+import { fetchHealth, triggerAnalysis, EnvironmentScan, ScanResult } from '../../services/api';
 
 interface AnalysisEvent {
   event: 'analysis_complete';
@@ -12,7 +12,9 @@ interface AnalysisEvent {
   frame_id: string;
   provider: string;
   frame_thumbnail: string | null;
-  detections: Array<{ object_name: string; confidence: number }>;
+  // The pipeline broadcasts on-device detections keyed by `label` (not
+  // `object_name`); match that shape so the detection fallback renders.
+  detections: Array<{ label: string; confidence: number }>;
   metrics: Record<string, number>;
   environment_scan: EnvironmentScan | null;
 }
@@ -60,7 +62,7 @@ export default function DashboardScreen() {
         setLastScanTime(new Date().toISOString());
       }
     });
-    return () => unsub();
+    return () => { unsub(); };
   }, []);
 
   // Poll health every 10 seconds.
@@ -80,7 +82,27 @@ export default function DashboardScreen() {
   const runScanNow = useCallback(async () => {
     setScanning(true);
     try {
-      await triggerAnalysis();
+      const result: ScanResult = await triggerAnalysis();
+      // Update the dashboard straight from the HTTP response instead of waiting
+      // for the WebSocket broadcast — so a manual scan always shows a result,
+      // even if the socket is momentarily disconnected.
+      if (result.event === 'analysis_complete') {
+        setLatest({
+          event: 'analysis_complete',
+          id: result.id ?? 0,
+          frame_id: result.frame_id,
+          provider: result.provider ?? 'unknown',
+          frame_thumbnail: result.frame_thumbnail ?? null,
+          detections: result.detections ?? [],
+          metrics: result.metrics ?? {},
+          environment_scan: result.environment_scan ?? null,
+        });
+        setLastScanTime(new Date().toISOString());
+      } else {
+        // Defensive: with force=true the backend shouldn't return no_motion,
+        // but surface it rather than leaving the user staring at a stale card.
+        Alert.alert('No Change Detected', 'The scene looked identical to the last frame, so no new analysis was produced.');
+      }
     } catch {
       Alert.alert('Scan Failed', 'Could not trigger analysis. Is the backend reachable?');
     } finally {
@@ -200,7 +222,7 @@ export default function DashboardScreen() {
             <Text style={styles.sectionLabel}>Detections ({latest.detections.length})</Text>
             {latest.detections.map((d, i) => (
               <View key={i} style={styles.detectionRow}>
-                <Text style={styles.objectName}>{d.object_name}</Text>
+                <Text style={styles.objectName}>{d.label}</Text>
                 <Text style={styles.confidence}>{(d.confidence * 100).toFixed(0)}%</Text>
               </View>
             ))}

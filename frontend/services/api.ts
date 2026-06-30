@@ -160,8 +160,26 @@ export async function deleteSchedule(id: number) {
   await api.delete(`/schedules/${id}`);
 }
 
-export async function triggerAnalysis(): Promise<void> {
-  await api.post('/analyze', {});
+export interface ScanResult {
+  event: 'analysis_complete' | 'no_motion';
+  id?: number;
+  frame_id: string;
+  provider?: string;
+  motion_detected?: boolean;
+  frame_thumbnail?: string | null;
+  detections?: Array<{ label: string; confidence: number; bbox?: number[]; track_id?: number | null }>;
+  counts?: { live: number; cumulative: number };
+  metrics?: Record<string, number>;
+  environment_scan?: EnvironmentScan | null;
+  ai_degraded?: boolean;
+}
+
+// Returns the analysis result directly so callers don't depend solely on the
+// WebSocket broadcast. With the backend forcing manual scans past the motion
+// gate, this always resolves to an `analysis_complete` payload on success.
+export async function triggerAnalysis(): Promise<ScanResult> {
+  const { data } = await api.post<ScanResult>('/analyze', {});
+  return data;
 }
 
 export async function connectCamera(): Promise<{ connected: boolean }> {

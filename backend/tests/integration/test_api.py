@@ -76,3 +76,29 @@ async def test_analyze_with_auth(client, auth_token):
 async def test_results_list_requires_auth(client):
     resp = await client.get("/api/v1/results")
     assert resp.status_code == 403
+
+
+async def test_manual_scan_bypasses_motion_gate():
+    """A manual (forced) scan must produce a result even on a static scene,
+    while an automated run on the same static scene is still motion-gated.
+    Regression guard for "Run Scan Now -> No analysis results yet"."""
+    from app.services.pipeline import AnalysisPipelineController
+
+    ctrl = AnalysisPipelineController()
+    ctrl._last_frame_b64 = "dGVzdA=="  # prime baseline so the motion gate is armed
+
+    snapshot = {"people_live": 0, "people_cumulative": 0, "detections": []}
+    ai = AnalysisResult(provider="onnx-yolo", raw_response="{}", detections=[], metrics={})
+
+    with patch("app.services.pipeline._frame_diff", return_value=0.0), \
+         patch("app.services.pipeline.detection_service.snapshot", return_value=snapshot), \
+         patch("app.services.pipeline.multi_ai_service.analyze", new_callable=AsyncMock, return_value=ai), \
+         patch("app.services.pipeline.connection_service.broadcast", new_callable=AsyncMock):
+        # Automated run, identical frame → gate skips, nothing persisted.
+        gated = await ctrl.run(frame_base64="dGVzdA==")
+        assert gated["event"] == "no_motion"
+
+        # Manual run, identical frame → force past the gate, analysis persisted.
+        forced = await ctrl.run(frame_base64="dGVzdA==", force=True)
+        assert forced["event"] == "analysis_complete"
+        assert forced["id"] is not None
