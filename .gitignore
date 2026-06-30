@@ -52,3 +52,6 @@ backend/.env
 .idea/
 *.swp
 *.swo
+
+# Local tooling
+.solongate/
