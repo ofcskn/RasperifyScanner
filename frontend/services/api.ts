@@ -218,9 +218,11 @@ export interface HealthData {
 
 export interface ScannerConfig {
   camera_source: string;
+  camera_rotation: number; // clockwise mount correction: 0 | 90 | 180 | 270
   detection_enabled: boolean;
   detection_conf_threshold: number;
   detection_iou_threshold: number;
+  detection_interval_seconds: number;
   counting_min_hits: number;
   counting_person_alert_threshold: number;
   ollama_enabled: boolean;

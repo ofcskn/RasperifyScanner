@@ -35,9 +35,11 @@ def _require_auth(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
 def _current() -> ConfigResponse:
     return ConfigResponse(
         camera_source=settings.camera_source,
+        camera_rotation=settings.camera_rotation,
         detection_enabled=settings.detection_enabled,
         detection_conf_threshold=settings.detection_conf_threshold,
         detection_iou_threshold=settings.detection_iou_threshold,
+        detection_interval_seconds=settings.detection_interval_seconds,
         counting_min_hits=settings.counting_min_hits,
         counting_person_alert_threshold=settings.counting_person_alert_threshold,
         ollama_enabled=settings.ollama_enabled,

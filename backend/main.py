@@ -39,6 +39,8 @@ async def _live_frame_broadcaster() -> None:
     PIL resize runs in an executor to avoid blocking the event loop.
     """
     loop = asyncio.get_running_loop()
+    last_det: dict | None = None
+    last_det_at = 0.0
     while True:
         try:
             running = camera_service._running
@@ -47,17 +49,34 @@ async def _live_frame_broadcaster() -> None:
                 frame = camera_service.get_latest_frame()
                 if frame is not None:
                     raw = base64.b64decode(frame.frame_base64)
+                    # frame_base64 is already rotation-corrected at capture, so a
+                    # 90/270 mount yields a portrait JPEG — swap the thumbnail
+                    # target dims to match or the preview is horizontally squashed.
+                    tw, th = _LIVE_THUMB_WIDTH, _LIVE_THUMB_HEIGHT
+                    if settings.camera_rotation % 180 == 90:
+                        tw, th = th, tw
                     thumb = await loop.run_in_executor(
                         None,
-                        lambda b=raw: resize_and_encode(
-                            b, _LIVE_THUMB_WIDTH, _LIVE_THUMB_HEIGHT, _LIVE_THUMB_QUALITY
-                        ),
+                        lambda b=raw: resize_and_encode(b, tw, th, _LIVE_THUMB_QUALITY),
                     )
                     # Stage 1: on-device detection + counting on the full-res frame.
                     # Runs in the executor (CPU-bound) so the event loop stays free.
-                    det = await loop.run_in_executor(
-                        None, detection_service.process, frame.frame_base64
-                    )
+                    # The preview streams every tick, but the heavier YOLO11s pass
+                    # runs only every detection_interval_seconds and the last boxes
+                    # are reused in between — the main guard against the Pi's CPU
+                    # saturating and freezing the live feed.
+                    now = loop.time()
+                    due = last_det is None or (now - last_det_at) >= settings.detection_interval_seconds
+                    if due:
+                        last_det = await loop.run_in_executor(
+                            None, detection_service.process, frame.frame_base64
+                        )
+                        last_det_at = now
+                    det = last_det
+                    # Rotated 90/270 mounts swap the rendered frame's dimensions.
+                    fw, fh = settings.camera_resolution_width, settings.camera_resolution_height
+                    if settings.camera_rotation % 180 == 90:
+                        fw, fh = fh, fw
                     await connection_service.broadcast({
                         "event": "live_frame",
                         "frame_id": frame.frame_id,
@@ -66,10 +85,7 @@ async def _live_frame_broadcaster() -> None:
                         "counts": det["counts"],
                         "detector": det.get("detector"),
                         "degraded": det.get("degraded", False),
-                        "frame_size": {
-                            "width": settings.camera_resolution_width,
-                            "height": settings.camera_resolution_height,
-                        },
+                        "frame_size": {"width": fw, "height": fh},
                     })
                     logger.debug(
                         "live_frame broadcast: frame_id=%s clients=%d people=%s",

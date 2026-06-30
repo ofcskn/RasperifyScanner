@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -30,7 +30,10 @@ class AnalyzeRequest(BaseModel):
 class DetectionItem(BaseModel):
     object_name: str
     confidence: float
-    bbox: Optional[dict] = None
+    # Normalized [x1, y1, x2, y2] in 0..1 — the same list shape produced by the
+    # detector (Detection.bbox) and persisted as bbox_json. Declaring it a dict
+    # caused a 500 on every stored detection (Pydantic dict_type validation error).
+    bbox: Optional[list[float]] = None
 
 
 class MetricItem(BaseModel):
@@ -140,9 +143,11 @@ class HealthResponse(BaseModel):
 
 class ConfigResponse(BaseModel):
     camera_source: str
+    camera_rotation: int
     detection_enabled: bool
     detection_conf_threshold: float
     detection_iou_threshold: float
+    detection_interval_seconds: float
     counting_min_hits: int
     counting_person_alert_threshold: int
     ollama_enabled: bool
@@ -153,9 +158,11 @@ class ConfigResponse(BaseModel):
 
 
 class ConfigUpdateRequest(BaseModel):
+    camera_rotation: Optional[Literal[0, 90, 180, 270]] = None
     detection_enabled: Optional[bool] = None
     detection_conf_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
     detection_iou_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    detection_interval_seconds: Optional[float] = Field(None, ge=0.5, le=30.0)
     counting_min_hits: Optional[int] = Field(None, ge=1)
     counting_person_alert_threshold: Optional[int] = Field(None, ge=0)
     ollama_model: Optional[str] = None

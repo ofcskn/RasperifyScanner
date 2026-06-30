@@ -75,11 +75,15 @@ def ensure_model() -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
     # Preferred: export from ultralytics if it happens to be installed.
+    # YOLO11s (small) is far more accurate than the old nano model on people and
+    # odd camera angles, and exports the identical (1,84,8400) ONNX output so the
+    # detector's post-processing is unchanged.
     try:
         from ultralytics import YOLO  # type: ignore
-        print("Exporting yolov8n -> ONNX via ultralytics ...")
-        model = YOLO("yolov8n.pt")
-        exported = model.export(format="onnx", imgsz=settings.detection_input_size)
+        weights = os.getenv("DETECTION_WEIGHTS", "yolo11s.pt")
+        print(f"Exporting {weights} -> ONNX via ultralytics ...")
+        model = YOLO(weights)
+        exported = model.export(format="onnx", imgsz=settings.detection_input_size, opset=12)
         shutil.copy(str(exported), path)
         ok(f"exported model to {path}")
         return

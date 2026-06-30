@@ -50,6 +50,16 @@ export default function ConfigPanel() {
       <Text style={styles.title}>Scanner Configuration {saving && <Text style={styles.saving}>· saving…</Text>}</Text>
       {error && <Text style={styles.error}>{error}</Text>}
 
+      <Row label="Camera rotation (fix upside-down mount)">
+        <TouchableOpacity
+          style={[styles.rotateBtn, saving && styles.rotateBtnDisabled]}
+          disabled={saving}
+          onPress={() => save({ camera_rotation: (((cfg.camera_rotation ?? 0) + 90) % 360) })}
+        >
+          <Text style={styles.rotateBtnText}>{cfg.camera_rotation ?? 0}°</Text>
+        </TouchableOpacity>
+      </Row>
+
       <Row label="Detection enabled">
         <Switch value={cfg.detection_enabled} onValueChange={(v) => save({ detection_enabled: v })} />
       </Row>
@@ -59,6 +69,13 @@ export default function ConfigPanel() {
         value={cfg.detection_conf_threshold.toFixed(2)}
         onDec={() => step('detection_conf_threshold', -0.05, 0, 1)}
         onInc={() => step('detection_conf_threshold', 0.05, 0, 1)}
+      />
+
+      <Stepper
+        label="Detection interval (s)"
+        value={(cfg.detection_interval_seconds ?? 2).toFixed(1)}
+        onDec={() => step('detection_interval_seconds', -0.5, 0.5, 30, 1)}
+        onInc={() => step('detection_interval_seconds', 0.5, 0.5, 30, 1)}
       />
 
       <Stepper
@@ -135,5 +152,11 @@ const styles = StyleSheet.create({
   },
   stepBtnText: { fontSize: 18, fontWeight: '800', color: Colors.primary },
   stepValue: { fontSize: 15, fontWeight: '700', color: Colors.text, minWidth: 48, textAlign: 'center' },
+  rotateBtn: {
+    paddingHorizontal: 16, height: 32, borderRadius: 8, backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center', minWidth: 64,
+  },
+  rotateBtnDisabled: { opacity: 0.5 },
+  rotateBtnText: { fontSize: 15, fontWeight: '800', color: Colors.primary },
   error: { color: Colors.danger, fontSize: 13 },
 });

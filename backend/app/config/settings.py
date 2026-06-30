@@ -48,16 +48,23 @@ class Settings(BaseSettings):
     # --- Stage 1: on-device detection ---
     detection_enabled: bool = True
     detection_backend: Literal["onnx-yolo"] = "onnx-yolo"
-    detection_model_path: str = "models/yolo.onnx"
-    detection_conf_threshold: float = 0.45  # higher = fewer low-confidence misclassifications
+    # YOLO11s (small) is the default: markedly more accurate than the old nano
+    # model on people/odd angles, with the identical (1,84,8400) ONNX output so
+    # post-processing is unchanged. scripts/setup_local.py exports it.
+    detection_model_path: str = "models/yolo11s.onnx"
+    detection_conf_threshold: float = 0.5  # higher = fewer low-confidence misclassifications
     detection_iou_threshold: float = 0.45
     detection_input_size: int = 640
     detection_target_labels: list[str] = []  # empty = all COCO classes
     detection_frame_budget_seconds: float = 1.0  # over budget -> skip frames (degrade)
-    # ONNX Runtime intra-op thread count. 0 = auto (leave 1 core free for the
-    # capture thread + event loop). Capping this stops YOLO inference from
-    # pinning every Pi core and freezing the live video.
-    detection_num_threads: int = 0
+    # Seconds between live detection passes. The preview still streams every
+    # ~1s, but the heavier YOLO11s inference runs only this often and the last
+    # boxes are reused in between — the main lever against CPU-bound freezing.
+    detection_interval_seconds: float = 2.0
+    # ONNX Runtime intra-op thread count. 0 = auto. On a 4-core Pi this resolves
+    # to 2 so YOLO inference and the Ollama (Stage-2) vision model can share the
+    # CPU without either pinning every core and freezing the live video.
+    detection_num_threads: int = 2
 
     # --- People counting ---
     counting_min_hits: int = 3        # frames a track must persist before counting
@@ -85,6 +92,11 @@ class Settings(BaseSettings):
     camera_frame_queue_size: int = 5
     camera_mock: bool = False
     camera_jpeg_quality: int = 85
+    # Clockwise rotation (0/90/180/270) applied to every captured frame before
+    # streaming and detection. Set to 180 for a ceiling/upside-down mount: YOLO
+    # is trained on upright images and reads an inverted head as a dog/cat, so an
+    # uncorrected orientation is the root cause of person→animal misclassification.
+    camera_rotation: Literal[0, 90, 180, 270] = 0
 
     # --- Analysis (Stage 2 cadence) ---
     analysis_worker_count: int = 2

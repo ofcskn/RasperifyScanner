@@ -10,16 +10,22 @@ camera_source: picamera2          # picamera2 | usb:/dev/video0 | rtsp://host:55
 camera_resolution_width: 1280
 camera_resolution_height: 720
 camera_jpeg_quality: 85
+# Clockwise rotation to correct the physical mount: 0 | 90 | 180 | 270.
+# Set to 180 for a ceiling/upside-down camera. An inverted face is the root
+# cause of person→dog/cat misclassification (YOLO is trained on upright images).
+camera_rotation: 180
 
 # --- Stage 1: on-device object/person detection ---
 detection_enabled: true
 detection_backend: onnx-yolo
-detection_model_path: models/yolo.onnx
-detection_conf_threshold: 0.35
+detection_model_path: models/yolo11s.onnx   # YOLO11s: far more accurate than nano
+detection_conf_threshold: 0.5     # suppress low-confidence (e.g. the spurious "dog 41%")
 detection_iou_threshold: 0.45
 detection_input_size: 640
 detection_target_labels: []       # [] = all COCO classes; e.g. ["person"] to count people only
 detection_frame_budget_seconds: 1.0   # if a frame takes longer, skip frames (graceful degradation)
+detection_interval_seconds: 2.0   # run YOLO this often; preview still streams ~1/s (CPU guard)
+detection_num_threads: 2          # cap ORT threads so YOLO + Ollama share the Pi's 4 cores
 
 # --- People counting rules ---
 counting_min_hits: 3              # frames a track must persist before it counts as a unique person

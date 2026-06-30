@@ -181,11 +181,16 @@ class CameraService:
 
     def _capture_one(self) -> CapturedFrame:
         raw = self._capture_mock() if self._mock else self._capture_real()
+        # Apply the mount-orientation correction once, here at the single source
+        # of frames, so the live preview, detection, and thumbnails all see an
+        # upright image. Read from settings each call so a live config change
+        # (PATCH /config camera_rotation) takes effect without a restart.
         encoded = resize_and_encode(
             raw,
             settings.camera_resolution_width,
             settings.camera_resolution_height,
             self._jpeg_quality,
+            rotation=settings.camera_rotation,
         )
         return CapturedFrame(frame_id=str(uuid.uuid4()), frame_base64=encoded)
 
