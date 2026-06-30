@@ -1,7 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, ActivityIndicator,
 } from 'react-native';
+import { fetchHealth } from '../../services/api';
+
+interface AdapterRow {
+  name: string;
+  interface: string;
+  up: boolean;
+  ip: string | null;
+}
+
+interface NetworkHealth {
+  active_adapter: string | null;
+  adapters: AdapterRow[];
+}
 
 type Section = {
   id: string;
@@ -56,6 +69,13 @@ const styles = StyleSheet.create({
 
   docLink: { marginTop: 16, backgroundColor: '#eff6ff', borderRadius: 8, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#bfdbfe' },
   docLinkText: { fontSize: 13, color: '#2563eb', fontWeight: '600' },
+
+  liveStatusLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
+  liveStatusLoadingText: { fontSize: 12, color: '#6b7280' },
+  liveAdapterRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  liveDot: { width: 9, height: 9, borderRadius: 5, marginRight: 10 },
+  liveAdapterName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#111827' },
+  liveAdapterState: { fontSize: 12, fontFamily: 'monospace', color: '#374151' },
 });
 
 function CodeBlock({ children }: { children: string }) {
@@ -87,6 +107,90 @@ function InfoBox({ type, children }: { type: 'tip' | 'warn' | 'error'; children:
   return (
     <View style={[styles.infoBox, { backgroundColor: colors[type], borderLeftColor: borders[type] }]}>
       <Text style={styles.infoText}>{icons[type]}  {children}</Text>
+    </View>
+  );
+}
+
+const ADAPTER_LABELS: Record<string, string> = {
+  usb: 'USB (usb0)',
+  ethernet: 'Ethernet (eth0)',
+  wifi: 'WiFi (wlan0)',
+};
+
+/**
+ * Live network status — reads the actual adapter state from /health instead of
+ * asserting a fixed assumption about which interface "should" be primary. The
+ * backend's active_adapter is whichever interface is genuinely up (priority:
+ * USB → Ethernet → WiFi), so this reflects reality whether the Pi is on
+ * Ethernet, WiFi, or USB-C.
+ */
+function LiveAdapterStatus() {
+  const [health, setHealth] = useState<NetworkHealth | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const data = (await fetchHealth()) as NetworkHealth;
+        if (active) { setHealth(data); setError(false); }
+      } catch {
+        if (active) setError(true);
+      }
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
+  if (error) {
+    return (
+      <InfoBox type="error">
+        Could not reach the backend to read network status. Confirm the backend is running and the app's API URL points at the Pi.
+      </InfoBox>
+    );
+  }
+
+  if (!health) {
+    return (
+      <View style={styles.liveStatusLoading}>
+        <ActivityIndicator color="#2563eb" />
+        <Text style={styles.liveStatusLoadingText}>Reading live adapter status…</Text>
+      </View>
+    );
+  }
+
+  const active = health.active_adapter;
+  const activeRow = health.adapters?.find((a) => a.name === active) ?? null;
+
+  return (
+    <View>
+      {active && activeRow ? (
+        <InfoBox type="tip">
+          You are connected via {ADAPTER_LABELS[active] ?? active} at {activeRow.ip}. This is the active adapter the backend is reachable on right now.
+        </InfoBox>
+      ) : (
+        <InfoBox type="warn">
+          No active adapter — none of the interfaces below are up with an IP. Connect Ethernet, WiFi, or USB-C gadget mode using the steps in the sections below.
+        </InfoBox>
+      )}
+
+      {(health.adapters ?? []).map((a) => {
+        const isActive = a.name === active;
+        const stateColor = a.up && a.ip ? '#059669' : '#9ca3af';
+        return (
+          <View key={a.interface} style={styles.liveAdapterRow}>
+            <View style={[styles.liveDot, { backgroundColor: stateColor }]} />
+            <Text style={styles.liveAdapterName}>
+              {ADAPTER_LABELS[a.name] ?? a.name}
+              {isActive ? '  ·  active' : ''}
+            </Text>
+            <Text style={styles.liveAdapterState}>
+              {a.up && a.ip ? a.ip : a.up ? 'up (no IP)' : 'down'}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -131,12 +235,11 @@ const sections: Section[] = [
           fix="Fix: Re-flash the SD card with correct WiFi credentials in Imager's Advanced Options, or run 'sudo raspi-config' → System Options → Wireless LAN on the Pi."
         />
 
-        <InfoBox type="warn">
-          You are currently connected via WiFi (that is how you SSH'd in), but usb0 and eth0 show as down. The app reports null because usb0 is the expected primary adapter and it is not configured yet.
-        </InfoBox>
+        <Text style={styles.subheading}>Live status</Text>
+        <LiveAdapterStatus />
 
         <Text style={[styles.body, { marginTop: 12 }]}>
-          Once USB-C gadget mode is installed (Section 3 below), all three adapters will appear with correct IPs and the active adapter will show as <Text style={styles.bold}>usb</Text>.
+          The active adapter is whichever interface is up first in priority order (<Text style={styles.bold}>USB → Ethernet → WiFi</Text>). Setting up USB-C gadget mode (Section below) adds the fastest direct-cable link, but Ethernet and WiFi work on their own.
         </Text>
       </View>
     ),
