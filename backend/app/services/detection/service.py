@@ -30,6 +30,7 @@ def _build_detector() -> Detector:
             iou_threshold=settings.detection_iou_threshold,
             target_labels=settings.detection_target_labels or None,
             input_size=settings.detection_input_size,
+            num_threads=settings.detection_num_threads,
         )
     raise ValueError(f"Unknown detection backend: {backend}")
 

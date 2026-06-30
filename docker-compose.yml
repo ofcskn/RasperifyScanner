@@ -1,4 +1,19 @@
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    network_mode: host
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - EXPO_NO_DOTENV=1
+      - EXPO_PUBLIC_API_URL=http://192.168.1.115:8000/api/v1
+      - EXPO_PUBLIC_WS_URL=ws://192.168.1.115:8000/ws/analysis-stream
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -14,9 +29,47 @@ services:
     volumes:
       - ./backend:/app
       - ./config:/config
+      # Pi camera — Python packages (host system packages, not on PyPI).
+      # Mount each package individually to avoid pulling in the host's PIL/numpy
+      # which conflict with the venv's versions.
+      - /usr/lib/python3/dist-packages/picamera2:/usr/lib/python3/dist-packages/picamera2:ro
+      - /usr/lib/python3/dist-packages/libcamera:/usr/lib/python3/dist-packages/libcamera:ro
+      - /usr/lib/python3/dist-packages/videodev2:/usr/lib/python3/dist-packages/videodev2:ro
+      - /usr/lib/python3/dist-packages/pidng:/usr/lib/python3/dist-packages/pidng:ro
+      - /usr/lib/python3/dist-packages/piexif:/usr/lib/python3/dist-packages/piexif:ro
+      - /usr/lib/python3/dist-packages/pykms:/usr/lib/python3/dist-packages/pykms:ro
+      - /usr/lib/python3/dist-packages/simplejpeg:/usr/lib/python3/dist-packages/simplejpeg:ro
+      - /usr/lib/python3/dist-packages/prctl.py:/usr/lib/python3/dist-packages/prctl.py:ro
+      - /usr/lib/python3/dist-packages/_prctl.cpython-313-aarch64-linux-gnu.so:/usr/lib/python3/dist-packages/_prctl.cpython-313-aarch64-linux-gnu.so:ro
+      # Pi camera — Pi-specific shared libraries mounted to /opt/pi-libs to avoid
+      # conflicting with the container's own /lib/aarch64-linux-gnu entries.
+      # libcamera.so.0.7 / libcamera-base.so.0.7 / libpisp.so.1 / libyuv.so.0
+      # are all symlinks on the host; Docker follows them so the container gets
+      # the actual binary at each soname path.
+      - /lib/aarch64-linux-gnu/libcamera.so.0.7:/opt/pi-libs/libcamera.so.0.7:ro
+      - /lib/aarch64-linux-gnu/libcamera-base.so.0.7:/opt/pi-libs/libcamera-base.so.0.7:ro
+      - /lib/aarch64-linux-gnu/libpisp.so.1:/opt/pi-libs/libpisp.so.1:ro
+      - /lib/aarch64-linux-gnu/libyuv.so.0:/opt/pi-libs/libyuv.so.0:ro
+      - /lib/aarch64-linux-gnu/libkms++.so.0:/opt/pi-libs/libkms++.so.0:ro
+      - /lib/aarch64-linux-gnu/libkms++util.so.0:/opt/pi-libs/libkms++util.so.0:ro
+      # libtensorflow-lite is dlopen'd by the vc4 IPA module (ipa_rpi_vc4.so).
+      # Without it the IPA fails to load and the camera never registers — the
+      # exact "Failed to register camera ov5647" failure. Pi/rpt build, not in Debian.
+      - /lib/aarch64-linux-gnu/libtensorflow-lite.so.2.20.0:/opt/pi-libs/libtensorflow-lite.so.2.20.0:ro
+      # Pi camera — IPA modules (signed pipeline processor code) + libcamera configs
+      - /usr/lib/aarch64-linux-gnu/libcamera/ipa:/usr/lib/aarch64-linux-gnu/libcamera/ipa:ro
+      - /usr/share/libcamera:/usr/share/libcamera:ro
+      # udev socket — needed by libcamera CameraManager to enumerate devices
+      - /run/udev:/run/udev:ro
     environment:
       - NETWORK_CONFIG_PATH=/config/network.yml
       - DATABASE_URL=sqlite+aiosqlite:///./rasperify.db
+      # picamera2/libcamera Python packages are mounted at the system dist-packages
+      # path; add that path so the venv's Python finds them.
+      - PYTHONPATH=/usr/lib/python3/dist-packages
+      # Pi-specific .so files are in /opt/pi-libs; tell the dynamic linker to
+      # search there so libcamera.so.0.7 etc. are found without running ldconfig.
+      - LD_LIBRARY_PATH=/opt/pi-libs
       # CAMERA_MOCK intentionally omitted — value comes from ./backend/.env
     env_file:
       - ./backend/.env

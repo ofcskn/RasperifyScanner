@@ -15,9 +15,9 @@ python-dotenv==1.0.1
 pyyaml==6.0.1
 httpx==0.28.1
 Pillow==11.3.0
-# picamera2 builds only on Linux (Raspberry Pi); on macOS/Windows dev the mock
-# camera or a USB/RTSP source is used instead.
-picamera2; sys_platform == "linux"
+# picamera2 and libcamera are Pi OS system packages (not on PyPI for arm64).
+# On the Pi they are bind-mounted from the host into the container via
+# docker-compose volumes; on macOS/Windows dev the mock camera is used instead.
 # --- Stage 1 local detection ---
 onnxruntime==1.20.1
 numpy==2.2.1

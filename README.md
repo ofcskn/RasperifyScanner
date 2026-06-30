@@ -19,18 +19,44 @@ AI-powered environment scanner running on Raspberry Pi 4 Model B. Captures frame
 
 ## Quick Start
 
-### Backend — on the Pi
+### Docker (recommended)
 
 ```bash
 git clone <repo> ~/RasperifyScanner
-cd ~/RasperifyScanner/backend
+cd ~/RasperifyScanner
+cp backend/.env.example backend/.env   # set GEMINI_API_KEY, SECRET_KEY
+docker compose up
+```
+
+| Service | URL |
+|---|---|
+| Backend API | `http://<pi-ip>:8000` |
+| Frontend (Expo web) | `http://<pi-ip>:8081` |
+
+First run builds the images — this takes a few minutes on the Pi. Subsequent starts are fast.
+
+```bash
+docker compose up --build   # rebuild after dependency changes
+docker compose down         # stop and remove containers
+```
+
+> On first run the frontend image installs all npm packages inside the container. The source directory is mounted as a volume so code changes reflect without rebuilding.
+
+---
+
+### Manual Setup (alternative)
+
+#### Backend — on the Pi
+
+```bash
+cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # set GEMINI_API_KEY, SECRET_KEY
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### Backend — on Mac (mock camera, for development)
+#### Backend — on Mac (mock camera)
 
 ```bash
 cd backend
@@ -42,7 +68,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 > On Mac, `camera_connected` is always `true` (mock) and all adapters show `up: false` — `usb0`/`eth0`/`wlan0` are Linux interface names that don't exist on macOS. Expected during development.
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend && npm i && npx expo start

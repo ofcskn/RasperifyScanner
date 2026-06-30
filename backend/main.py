@@ -101,6 +101,28 @@ async def _seed_default_schedule() -> None:
         logger.info("Seeded default '%s' schedule (every %ds)", _DEFAULT_SCHEDULE_NAME, _DEFAULT_SCHEDULE_INTERVAL)
 
 
+async def _warn_if_ollama_unreachable() -> None:
+    if not settings.ollama_enabled:
+        return
+    from app.services.ai.ollama import OllamaProvider
+    info = await OllamaProvider().health()
+    if not info.get("reachable"):
+        logger.warning(
+            "Ollama is not reachable at %s. AI analysis (Stage 2) will be skipped until "
+            "Ollama is running. Install: https://ollama.com — then: ollama pull %s",
+            settings.ollama_host,
+            settings.ollama_model,
+        )
+    elif not info.get("model_present"):
+        logger.warning(
+            "Ollama is running but model '%s' is not pulled. Run: ollama pull %s",
+            settings.ollama_model,
+            settings.ollama_model,
+        )
+    else:
+        logger.info("Ollama OK — host=%s model=%s", settings.ollama_host, settings.ollama_model)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -108,6 +130,7 @@ async def lifespan(app: FastAPI):
     scheduler_service.start()
     await scheduler_service.load_persisted_schedules()
     await _seed_default_schedule()
+    await _warn_if_ollama_unreachable()
     live_task = asyncio.create_task(_live_frame_broadcaster())
     yield
     scheduler_service.stop()

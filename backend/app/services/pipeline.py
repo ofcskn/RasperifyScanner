@@ -74,7 +74,14 @@ class AnalysisPipelineController:
         # Stage 1: on-device YOLO snapshot (real boxes + per-frame person count),
         # without advancing the live tracker. Stage 2: local Ollama scene analysis.
         snapshot = detection_service.snapshot(frame_base64)
-        result = await multi_ai_service.analyze(frame_base64, prompt)
+        ai_degraded = False
+        try:
+            result = await multi_ai_service.analyze(frame_base64, prompt)
+        except Exception as exc:
+            logger.warning("AI analysis unavailable (%s), returning YOLO-only result", exc)
+            from app.services.ai.base import AnalysisResult
+            result = AnalysisResult(provider="none", raw_response="", detections=[], metrics={})
+            ai_degraded = True
 
         env_dict = None
         if result.environment_scan is not None:
@@ -134,6 +141,7 @@ class AnalysisPipelineController:
             "counts": {"live": people_live, "cumulative": people_cumulative},
             "metrics": result.metrics,
             "environment_scan": env_dict,
+            "ai_degraded": ai_degraded,
         }
         await connection_service.broadcast(broadcast_payload)
 

@@ -37,6 +37,10 @@ class CameraService:
         self._camera = None
         self._jpeg_quality: int = settings.camera_jpeg_quality
         self._capture_ok: bool = False
+        # Most recent frame captured by the _run() loop. capture_now() reuses this
+        # while the live thread owns the camera, so analysis never opens a second
+        # picamera2 handle (only one process may hold the Pi camera at a time).
+        self._latest: CapturedFrame | None = None
 
         self._source = settings.camera_source
         self._capture = None  # OpenCV VideoCapture handle, when used
@@ -68,8 +72,9 @@ class CameraService:
     def _try_import_picamera() -> bool:
         try:
             import picamera2  # noqa: F401
+            import libcamera  # noqa: F401  # C extension; must be present for picamera2 to work
             return True
-        except ImportError:
+        except Exception:
             return False
 
     @staticmethod
@@ -103,11 +108,15 @@ class CameraService:
         from picamera2 import Picamera2
         cam = Picamera2()
         # Video configuration keeps the sensor in continuous capture mode.
-        # RGB888 gives a plain (H, W, 3) uint8 array that PIL handles directly.
+        # libcamera format names are byte-order reversed vs. the numpy array you
+        # get back: "RGB888" yields a BGR array, "BGR888" yields an RGB array.
+        # We feed the array straight into PIL (which expects RGB), so we MUST
+        # request "BGR888" — otherwise red/blue are swapped, the live preview is
+        # tinted, and YOLO misclassifies (e.g. a person reads as a cat/dog).
         config = cam.create_video_configuration(
             main={
                 "size": (settings.camera_resolution_width, settings.camera_resolution_height),
-                "format": "RGB888",
+                "format": "BGR888",
             }
         )
         cam.configure(config)
@@ -188,7 +197,14 @@ class CameraService:
                 self._camera = self._open_camera()
                 self._capture_ok = True
             except Exception as exc:
-                logger.error("Camera open failed: %s", exc)
+                logger.error(
+                    "Camera open failed: %s\n"
+                    "  → Ensure the camera ribbon is connected and the camera is enabled.\n"
+                    "  → If running in Docker, check that libcamera.so and picamera2 are\n"
+                    "    mounted from the host (see docker-compose.yml Pi camera volumes).\n"
+                    "  → Set CAMERA_MOCK=true to use a synthetic test feed.",
+                    exc,
+                )
                 self._capture_ok = False
                 return
         logger.info("CameraService started (mock=%s)", self._mock)
@@ -196,6 +212,7 @@ class CameraService:
             try:
                 frame = self._capture_one()
                 self._capture_ok = True
+                self._latest = frame
                 try:
                     self._queue.put_nowait(frame)
                 except queue.Full:
@@ -228,22 +245,41 @@ class CameraService:
                 self._camera.stop()
             except Exception:
                 pass
+            # stop() only halts streaming; close() releases the camera device.
+            # Without it the sensor stays held and the next Picamera2() raises
+            # "Failed to acquire camera: Device or resource busy".
+            try:
+                self._camera.close()
+            except Exception:
+                pass
         self._camera = None
 
     def stop(self) -> None:
         self._running = False
         self._close_handle()
         self._capture_ok = False
+        self._latest = None
 
     def capture_now(self) -> CapturedFrame:
         """One-shot capture used by the analysis pipeline.
 
-        If live mode is not active (_camera is None) and we're on real hardware,
-        opens a temporary camera session, captures one frame, and closes it.
+        While the live capture thread is running it owns the camera exclusively,
+        so we reuse its most recent frame instead of touching picamera2 from
+        another thread or opening a second handle (which raises "Device or
+        resource busy"). When live mode is off, we open a temporary session,
+        capture one frame, and release the device.
         """
+        if self._running and not self._mock:
+            if self._latest is not None:
+                return self._latest
+            # Live thread is still warming up (no frame yet); fall through only
+            # if no handle is open, otherwise reuse the shared open handle.
+            if self._camera is not None:
+                return self._capture_one()
+
         if not self._mock and self._camera is None:
             try:
-                self._open_camera()
+                self._camera = self._open_camera()
                 return self._capture_one()
             finally:
                 self._close_handle()

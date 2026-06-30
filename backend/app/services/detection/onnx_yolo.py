@@ -39,12 +39,14 @@ class OnnxYoloDetector(Detector):
         iou_threshold: float = 0.45,
         target_labels: list[str] | None = None,
         input_size: int = 640,
+        num_threads: int = 0,
     ) -> None:
         self._model_path = model_path
         self._conf = conf_threshold
         self._iou = iou_threshold
         self._target = set(target_labels) if target_labels else None
         self._input_size = input_size
+        self._num_threads = num_threads
         self._session = None
         self._input_name: str | None = None
         self._np = None
@@ -73,7 +75,19 @@ class OnnxYoloDetector(Detector):
             )
             return
         try:
-            self._session = ort.InferenceSession(self._model_path, providers=_PREFERRED_PROVIDERS)
+            # On a CPU-only Pi, ORT otherwise grabs every core for inference and
+            # starves the capture thread / event loop. Resolve 0 -> "cores - 1"
+            # (min 1) so the system stays responsive while YOLO runs.
+            sess_options = ort.SessionOptions()
+            threads = self._num_threads
+            if threads <= 0:
+                threads = max(1, (os.cpu_count() or 2) - 1)
+            sess_options.intra_op_num_threads = threads
+            sess_options.inter_op_num_threads = 1
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            self._session = ort.InferenceSession(
+                self._model_path, sess_options=sess_options, providers=_PREFERRED_PROVIDERS
+            )
             self._input_name = self._session.get_inputs()[0].name
             shape = self._session.get_inputs()[0].shape
             # Static square models expose their input size; fall back to the default.
@@ -81,8 +95,8 @@ class OnnxYoloDetector(Detector):
                 self._input_size = int(shape[-1])
             self._np = np
             logger.info(
-                "OnnxYoloDetector loaded %s (input=%d, providers=%s)",
-                self._model_path, self._input_size, self._session.get_providers(),
+                "OnnxYoloDetector loaded %s (input=%d, intra_op_threads=%d, providers=%s)",
+                self._model_path, self._input_size, threads, self._session.get_providers(),
             )
         except Exception as exc:  # pragma: no cover - depends on ORT/model
             logger.error("OnnxYoloDetector failed to load %s: %s", self._model_path, exc)

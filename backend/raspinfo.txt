@@ -1,0 +1,129 @@
+System Information
+------------------
+
+Raspberry Pi 4 Model B Rev 1.5
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+
+Raspberry Pi reference 2026-04-21
+Generated using pi-gen, https://github.com/RPi-Distro/pi-gen, 4ad56cc850fa60adcc7f07dc15879bc95cc1d281, stage2
+
+Linux raspberrypi 6.18.33+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.18.33-1+rpt1 (2026-06-01) aarch64 GNU/Linux
+Revision	: d03115
+Serial		: 10000000fed55895
+Model		: Raspberry Pi 4 Model B Rev 1.5
+Throttled flag  : throttled=0x50000
+Camera Information
+------------------
+
+Camera          : supported=0 detected=0, libcamera interfaces=0
+
+Videocore information
+---------------------
+
+May 21 2026 11:20:25 
+Copyright (c) 2012 Broadcom
+version 288930ab4712b99596f32732664aaaeb881ef1e0 (clean) (release) (start)
+
+alloc failures:     0
+compactions:        0
+legacy block fails: 0
+
+
+Filesystem information
+----------------------
+
+Filesystem     1K-blocks     Used Available Use% Mounted on
+udev             3734852        0   3734852   0% /dev
+tmpfs            1601492    19608   1581884   2% /run
+/dev/mmcblk0p2  30080772 22562704   6234392  79% /
+tmpfs            4003724        8   4003716   1% /dev/shm
+tmpfs               5120       16      5104   1% /run/lock
+tmpfs               1024        0      1024   0% /run/credentials/systemd-journald.service
+tmpfs            4003728      700   4003028   1% /tmp
+/dev/mmcblk0p1    516204    68065    448140  14% /boot/firmware
+tmpfs             800744       20    800724   1% /run/user/1000
+tmpfs               1024        0      1024   0% /run/credentials/getty@tty1.service
+tmpfs               1024        0      1024   0% /run/credentials/serial-getty@ttyS0.service
+overlay         30080772 22562704   6234392  79% /tmp/containerd-mount1944957986
+overlay         30080772 22562704   6234392  79% /tmp/containerd-mount3448814223
+overlay         30080772 22562704   6234392  79% /tmp/containerd-mount1127024423
+overlay         30080772 22562704   6234392  79% /tmp/containerd-mount3478088451
+
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	2097148		29404		100
+
+Package version information
+---------------------------
+
+raspberrypi-ui-mods:
+  Installed: (none)
+raspberrypi-sys-mods:
+  Installed: 1:20260315
+openbox:
+  Installed: (none)
+lxpanel:
+  Installed: (none)
+pcmanfm:
+  Installed: (none)
+rpd-plym-splash:
+  Installed: (none)
+
+Networking Information
+----------------------
+
+Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
+ face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
+
+0: hci0: Bluetooth
+	Soft blocked: yes
+	Hard blocked: no
+1: phy0: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet x.x.x.x  netmask x.x.x.x  broadcast x.x.x.x
+        inet6 y::y.y.y.y  prefixlen 64  scopeid 0x20<link>
+        inet6 y.y.y.y.y.y.y.y  prefixlen 64  scopeid 0x0<global>
+        ether m.m.m.m  txqueuelen 1000  (Ethernet)
+        RX packets 4172077  bytes 5652246781 (5.2 GiB)
+        RX errors 0  dropped 317  overruns 0  frame 0
+        TX packets 1895873  bytes 254596403 (242.8 MiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+Settings for eth0:
+	Supported ports: [ TP	 MII ]
+	Supported link modes:   10baseT/Half 10baseT/Full
+	                        100baseT/Half 100baseT/Full
+	                        1000baseT/Half 1000baseT/Full
+	Supported pause frame use: Symmetric Receive-only
+	Supports auto-negotiation: Yes
+	Supported FEC modes: Not reported
+	Advertised link modes:  10baseT/Half 10baseT/Full
+	                        100baseT/Half 100baseT/Full
+	                        1000baseT/Half 1000baseT/Full
+	Advertised pause frame use: Symmetric Receive-only
+	Advertised auto-negotiation: Yes
+	Advertised FEC modes: Not reported
+	Link partner advertised link modes:  10baseT/Half 10baseT/Full
+	                                     100baseT/Half 100baseT/Full
+	Link partner advertised pause frame use: Symmetric
+	Link partner advertised auto-negotiation: Yes
+	Link partner advertised FEC modes: Not reported
+	Speed: 100Mb/s
+	Duplex: Full
+	Auto-negotiation: on
+	master-slave cfg: preferred slave
+	master-slave status: slave
+	Port: Twisted Pair
+	PHYAD: 1
+	Transceiver: external
+	MDI-X: Unknown
+	Supports Wake-on: d
+	Wake-on: d
+        Current message level: 0x00000007 (7)
+                               drv probe link
+	Link detected: yes
